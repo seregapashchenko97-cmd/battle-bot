@@ -22,36 +22,37 @@ img1 = Image.open(BytesIO(response1.content)).convert("RGB")
 response2 = requests.get(BOTTOM_URL)
 img2 = Image.open(BytesIO(response2.content)).convert("RGB")
 
-def crop_center(img, target_w, target_h):
+scale1 = max(WIDTH / img1.width, HALF / img1.height)
+new_w1 = int(img1.width * scale1)
+new_h1 = int(img1.height * scale1)
 
-```
-scale = max(
-    target_w / img.width,
-    target_h / img.height
-)
+img1 = img1.resize((new_w1, new_h1))
 
-new_w = int(img.width * scale)
-new_h = int(img.height * scale)
+left1 = (new_w1 - WIDTH) // 2
+top1 = (new_h1 - HALF) // 2
 
-img = img.resize((new_w, new_h))
+img1 = img1.crop((
+left1,
+top1,
+left1 + WIDTH,
+top1 + HALF
+))
 
-left = (new_w - target_w) // 2
-top = (new_h - target_h) // 2
+scale2 = max(WIDTH / img2.width, HALF / img2.height)
+new_w2 = int(img2.width * scale2)
+new_h2 = int(img2.height * scale2)
 
-img = img.crop(
-    (
-        left,
-        top,
-        left + target_w,
-        top + target_h
-    )
-)
+img2 = img2.resize((new_w2, new_h2))
 
-return img
-```
+left2 = (new_w2 - WIDTH) // 2
+top2 = (new_h2 - HALF) // 2
 
-img1 = crop_center(img1, WIDTH, HALF)
-img2 = crop_center(img2, WIDTH, HALF)
+img2 = img2.crop((
+left2,
+top2,
+left2 + WIDTH,
+top2 + HALF
+))
 
 canvas = Image.new("RGB", (WIDTH, HEIGHT))
 
@@ -61,31 +62,13 @@ canvas.paste(img2, (0, HALF))
 draw = ImageDraw.Draw(canvas)
 
 try:
-
-```
-font_big = ImageFont.truetype(
-    "DejaVuSans-Bold.ttf",
-    90
-)
-
-font_vs = ImageFont.truetype(
-    "DejaVuSans-Bold.ttf",
-    180
-)
-
-font_timer = ImageFont.truetype(
-    "DejaVuSans-Bold.ttf",
-    130
-)
-```
-
+font_big = ImageFont.truetype("DejaVuSans-Bold.ttf", 90)
+font_vs = ImageFont.truetype("DejaVuSans-Bold.ttf", 180)
+font_timer = ImageFont.truetype("DejaVuSans-Bold.ttf", 130)
 except:
-
-```
 font_big = ImageFont.load_default()
 font_vs = ImageFont.load_default()
 font_timer = ImageFont.load_default()
-```
 
 draw.line(
 [(0, HALF), (WIDTH, HALF)],
@@ -176,12 +159,8 @@ video = open("battle.mp4", "rb")
 
 requests.post(
 url,
-data={
-"chat_id": CHAT_ID
-},
-files={
-"video": video
-}
+data={"chat_id": CHAT_ID},
+files={"video": video}
 )
 
 video.close()
