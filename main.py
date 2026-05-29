@@ -6,7 +6,6 @@ import requests
 from io import BytesIO
 import random
 from moviepy.editor import *
-import os
 
 # =========================
 # TELEGRAM
@@ -21,7 +20,7 @@ CHAT_ID = "476718796"
 
 WIDTH = 720
 HEIGHT = 1280
-HALF_HEIGHT = HEIGHT // 2
+HALF = HEIGHT // 2
 
 # =========================
 # BATTLES
@@ -30,10 +29,10 @@ HALF_HEIGHT = HEIGHT // 2
 battles = [
 
     {
-        "top_text": "LUXURY VILLA",
-        "bottom_text": "PRIVATE JET",
-        "top": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=1800",
-        "bottom": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?q=80&w=1800"
+        "top_text": "PRIVATE JET",
+        "bottom_text": "LUXURY VILLA",
+        "top": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?q=80&w=1800",
+        "bottom": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=1800"
     },
 
     {
@@ -41,13 +40,6 @@ battles = [
         "bottom_text": "LAMBORGHINI",
         "top": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1800",
         "bottom": "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=1800"
-    },
-
-    {
-        "top_text": "PENTHOUSE",
-        "bottom_text": "YACHT",
-        "top": "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?q=80&w=1800",
-        "bottom": "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?q=80&w=1800"
     }
 
 ]
@@ -58,7 +50,7 @@ battle = random.choice(battles)
 # LOAD IMAGE
 # =========================
 
-def load_image(url):
+def load_image(url, target_h):
 
     response = requests.get(url)
 
@@ -68,7 +60,7 @@ def load_image(url):
 
     scale = max(
         WIDTH / img.width,
-        HALF_HEIGHT / img.height
+        target_h / img.height
     )
 
     img = img.resize(
@@ -79,14 +71,14 @@ def load_image(url):
     )
 
     left = (img.width - WIDTH) // 2
-    top = (img.height - HALF_HEIGHT) // 2
+    top = (img.height - target_h) // 2
 
     img = img.crop(
         (
             left,
             top,
             left + WIDTH,
-            top + HALF_HEIGHT
+            top + target_h
         )
     )
 
@@ -96,100 +88,112 @@ def load_image(url):
 # CREATE IMAGE
 # =========================
 
-top_img = load_image(battle["top"])
-bottom_img = load_image(battle["bottom"])
+top_img = load_image(battle["top"], HALF)
+bottom_img = load_image(battle["bottom"], HALF)
 
-final = Image.new(
-    "RGB",
-    (WIDTH, HEIGHT)
+canvas = Image.new("RGB", (WIDTH, HEIGHT))
+
+canvas.paste(top_img, (0, 0))
+canvas.paste(bottom_img, (0, HALF))
+
+draw = ImageDraw.Draw(canvas)
+
+# =========================
+# FONTS
+# =========================
+
+font_big = ImageFont.truetype(
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    110
 )
 
-final.paste(top_img, (0, 0))
-final.paste(bottom_img, (0, HALF_HEIGHT))
+font_vs = ImageFont.truetype(
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    220
+)
 
-draw = ImageDraw.Draw(final)
+timer_font = ImageFont.truetype(
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    150
+)
 
 # =========================
-# FONT
+# DARK OVERLAY
 # =========================
 
-try:
-    font_big = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        70
-    )
+overlay = Image.new(
+    "RGBA",
+    (WIDTH, HEIGHT),
+    (0, 0, 0, 60)
+)
 
-    font_vs = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        120
-    )
+canvas = Image.alpha_composite(
+    canvas.convert("RGBA"),
+    overlay
+)
 
-    timer_font = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        90
-    )
-
-except:
-    font_big = ImageFont.load_default()
-    font_vs = ImageFont.load_default()
-    timer_font = ImageFont.load_default()
+draw = ImageDraw.Draw(canvas)
 
 # =========================
 # TEXT
 # =========================
 
-top_text = battle["top_text"]
-bottom_text = battle["bottom_text"]
-
-# top text
+# TOP
 draw.text(
-    (WIDTH // 2, HALF_HEIGHT - 180),
-    top_text,
+    (WIDTH // 2, HALF - 170),
+    battle["top_text"],
     anchor="mm",
     font=font_big,
-    fill="white",
-    stroke_width=4,
-    stroke_fill="black"
+    fill=(255,255,255),
+    stroke_width=8,
+    stroke_fill=(0,0,0)
 )
 
-# bottom text
+# BOTTOM
 draw.text(
-    (WIDTH // 2, HALF_HEIGHT + 180),
-    bottom_text,
+    (WIDTH // 2, HALF + 170),
+    battle["bottom_text"],
     anchor="mm",
     font=font_big,
-    fill="white",
-    stroke_width=4,
-    stroke_fill="black"
+    fill=(255,255,255),
+    stroke_width=8,
+    stroke_fill=(0,0,0)
 )
 
 # VS
 draw.text(
-    (WIDTH // 2, HALF_HEIGHT),
+    (WIDTH // 2, HALF),
     "VS",
     anchor="mm",
     font=font_vs,
-    fill="yellow",
-    stroke_width=6,
-    stroke_fill="black"
+    fill=(255,215,0),
+    stroke_width=10,
+    stroke_fill=(0,0,0)
 )
 
 # TIMER
 draw.text(
-    (WIDTH // 2, HALF_HEIGHT - 80),
+    (WIDTH // 2, HALF - 110),
     "5",
     anchor="mm",
     font=timer_font,
-    fill="red",
-    stroke_width=5,
-    stroke_fill="black"
+    fill=(255,50,50),
+    stroke_width=8,
+    stroke_fill=(0,0,0)
 )
 
-image_path = "battle.jpg"
+# LINE
+draw.line(
+    [(0, HALF), (WIDTH, HALF)],
+    fill=(255,255,255),
+    width=8
+)
 
-final.save(
+image_path = "battle.png"
+
+canvas.convert("RGB").save(
     image_path,
-    quality=90
+    quality=95
 )
 
 # =========================
@@ -223,10 +227,10 @@ data = {
     "chat_id": CHAT_ID
 }
 
-response = requests.post(
+requests.post(
     url,
     files=files,
     data=data
 )
 
-print(response.text)
+print("DONE")
