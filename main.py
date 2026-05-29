@@ -1,2 +1,1 @@
-print("BOT STARTED")
-print("HELLO")
+print("BOT STARTED SUCCESSFULLY")
