@@ -1,0 +1,6 @@
+Pillow
+requests
+moviepy
+imageio
+imageio-ffmpeg
+numpy
