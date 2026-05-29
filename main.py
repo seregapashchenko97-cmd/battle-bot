@@ -1,3 +1,4 @@
+```python id="q7m4xp"
 from PIL import Image, ImageDraw, ImageFont
 
 Image.ANTIALIAS = Image.Resampling.LANCZOS
@@ -96,35 +97,14 @@ canvas = Image.new("RGB", (WIDTH, HEIGHT))
 canvas.paste(top_img, (0, 0))
 canvas.paste(bottom_img, (0, HALF))
 
-draw = ImageDraw.Draw(canvas)
-
 # =========================
-# FONTS
-# =========================
-
-font_big = ImageFont.truetype(
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    110
-)
-
-font_vs = ImageFont.truetype(
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    220
-)
-
-timer_font = ImageFont.truetype(
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    150
-)
-
-# =========================
-# DARK OVERLAY
+# OVERLAY
 # =========================
 
 overlay = Image.new(
     "RGBA",
     (WIDTH, HEIGHT),
-    (0, 0, 0, 60)
+    (0, 0, 0, 70)
 )
 
 canvas = Image.alpha_composite(
@@ -135,12 +115,48 @@ canvas = Image.alpha_composite(
 draw = ImageDraw.Draw(canvas)
 
 # =========================
-# TEXT
+# FONTS
 # =========================
 
-# TOP
+try:
+
+    font_big = ImageFont.truetype(
+        "DejaVuSans-Bold.ttf",
+        110
+    )
+
+    font_vs = ImageFont.truetype(
+        "DejaVuSans-Bold.ttf",
+        240
+    )
+
+    timer_font = ImageFont.truetype(
+        "DejaVuSans-Bold.ttf",
+        150
+    )
+
+except:
+
+    font_big = ImageFont.load_default()
+    font_vs = ImageFont.load_default()
+    timer_font = ImageFont.load_default()
+
+# =========================
+# LINE
+# =========================
+
+draw.line(
+    [(0, HALF), (WIDTH, HALF)],
+    fill=(255,255,255),
+    width=10
+)
+
+# =========================
+# TOP TEXT
+# =========================
+
 draw.text(
-    (WIDTH // 2, HALF - 170),
+    (WIDTH // 2, HALF - 180),
     battle["top_text"],
     anchor="mm",
     font=font_big,
@@ -149,9 +165,12 @@ draw.text(
     stroke_fill=(0,0,0)
 )
 
-# BOTTOM
+# =========================
+# BOTTOM TEXT
+# =========================
+
 draw.text(
-    (WIDTH // 2, HALF + 170),
+    (WIDTH // 2, HALF + 180),
     battle["bottom_text"],
     anchor="mm",
     font=font_big,
@@ -160,34 +179,37 @@ draw.text(
     stroke_fill=(0,0,0)
 )
 
+# =========================
 # VS
+# =========================
+
 draw.text(
     (WIDTH // 2, HALF),
     "VS",
     anchor="mm",
     font=font_vs,
     fill=(255,215,0),
-    stroke_width=10,
+    stroke_width=12,
     stroke_fill=(0,0,0)
 )
 
+# =========================
 # TIMER
+# =========================
+
 draw.text(
-    (WIDTH // 2, HALF - 110),
+    (WIDTH // 2, HALF - 120),
     "5",
     anchor="mm",
     font=timer_font,
     fill=(255,50,50),
-    stroke_width=8,
+    stroke_width=10,
     stroke_fill=(0,0,0)
 )
 
-# LINE
-draw.line(
-    [(0, HALF), (WIDTH, HALF)],
-    fill=(255,255,255),
-    width=8
-)
+# =========================
+# SAVE IMAGE
+# =========================
 
 image_path = "battle.png"
 
@@ -234,3 +256,4 @@ requests.post(
 )
 
 print("DONE")
+```
