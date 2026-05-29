@@ -61,9 +61,9 @@ canvas.paste(img2, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-font_big = ImageFont.load_default()
-font_vs = ImageFont.load_default()
-font_timer = ImageFont.load_default()
+font_big = ImageFont.truetype("DejaVuSans.ttf", 80)
+font_vs = ImageFont.truetype("DejaVuSans.ttf", 140)
+font_timer = ImageFont.truetype("DejaVuSans.ttf", 120)
 
 draw.line(
 [(0, HALF), (WIDTH, HALF)],
@@ -71,22 +71,14 @@ fill=(255,255,255),
 width=8
 )
 
-draw.rectangle(
-[(120, 40), (600, 180)],
-fill=(0,0,0)
-)
-
 draw.text(
 (360, 110),
 "5",
 anchor="mm",
 font=font_timer,
-fill=(255,0,0)
-)
-
-draw.rectangle(
-[(40, 430), (680, 560)],
-fill=(0,0,0)
+fill=(255,0,0),
+stroke_width=4,
+stroke_fill=(0,0,0)
 )
 
 draw.text(
@@ -94,12 +86,9 @@ draw.text(
 TOP_TEXT,
 anchor="mm",
 font=font_big,
-fill=(255,255,255)
-)
-
-draw.rectangle(
-[(40, 720), (680, 850)],
-fill=(0,0,0)
+fill=(255,255,255),
+stroke_width=5,
+stroke_fill=(0,0,0)
 )
 
 draw.text(
@@ -107,12 +96,9 @@ draw.text(
 BOTTOM_TEXT,
 anchor="mm",
 font=font_big,
-fill=(255,255,255)
-)
-
-draw.rectangle(
-[(180, 520), (540, 760)],
-fill=(0,0,0)
+fill=(255,255,255),
+stroke_width=5,
+stroke_fill=(0,0,0)
 )
 
 draw.text(
@@ -120,7 +106,9 @@ draw.text(
 "VS",
 anchor="mm",
 font=font_vs,
-fill=(255,215,0)
+fill=(255,215,0),
+stroke_width=6,
+stroke_fill=(0,0,0)
 )
 
 canvas.save("battle.png")
