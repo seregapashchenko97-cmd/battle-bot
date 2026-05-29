@@ -1,4 +1,3 @@
-```python id="m5r8zt"
 from PIL import Image, ImageDraw, ImageFont
 
 Image.ANTIALIAS = Image.Resampling.LANCZOS
@@ -267,4 +266,3 @@ with open(video_path, "rb") as video_file:
     )
 
 print(response.text)
-```
