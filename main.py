@@ -61,9 +61,9 @@ canvas.paste(img2, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-font_big = ImageFont.truetype("DejaVuSans.ttf", 80)
-font_vs = ImageFont.truetype("DejaVuSans.ttf", 140)
-font_timer = ImageFont.truetype("DejaVuSans.ttf", 120)
+font_big = ImageFont.load_default()
+font_vs = ImageFont.load_default()
+font_timer = ImageFont.load_default()
 
 draw.line(
 [(0, HALF), (WIDTH, HALF)],
@@ -72,32 +72,32 @@ width=8
 )
 
 draw.text(
-(360, 110),
+(360, 90),
 "5",
 anchor="mm",
 font=font_timer,
 fill=(255,0,0),
-stroke_width=4,
+stroke_width=3,
 stroke_fill=(0,0,0)
 )
 
 draw.text(
-(360, 495),
+(360, 500),
 TOP_TEXT,
 anchor="mm",
 font=font_big,
 fill=(255,255,255),
-stroke_width=5,
+stroke_width=2,
 stroke_fill=(0,0,0)
 )
 
 draw.text(
-(360, 785),
+(360, 780),
 BOTTOM_TEXT,
 anchor="mm",
 font=font_big,
 fill=(255,255,255),
-stroke_width=5,
+stroke_width=2,
 stroke_fill=(0,0,0)
 )
 
@@ -107,9 +107,11 @@ draw.text(
 anchor="mm",
 font=font_vs,
 fill=(255,215,0),
-stroke_width=6,
+stroke_width=2,
 stroke_fill=(0,0,0)
 )
+
+canvas = canvas.resize((1080, 1920))
 
 canvas.save("battle.png")
 
@@ -126,14 +128,11 @@ logger=None
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
 
-video = open("battle.mp4", "rb")
-
+with open("battle.mp4", "rb") as video:
 requests.post(
 url,
 data={"chat_id": CHAT_ID},
 files={"video": video}
 )
-
-video.close()
 
 print("DONE")
