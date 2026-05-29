@@ -3,8 +3,8 @@ import requests
 from io import BytesIO
 from moviepy.editor import ImageClip
 
-WIDTH = 720
-HEIGHT = 1280
+WIDTH = 1080
+HEIGHT = 1920
 HALF = HEIGHT // 2
 
 BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
@@ -61,7 +61,9 @@ canvas.paste(img2, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-font = ImageFont.load_default()
+font_big = ImageFont.truetype("Anton-Regular.ttf", 120)
+font_vs = ImageFont.truetype("Anton-Regular.ttf", 90)
+font_timer = ImageFont.truetype("Anton-Regular.ttf", 140)
 
 draw.line(
 [(0, HALF), (WIDTH, HALF)],
@@ -70,52 +72,46 @@ width=8
 )
 
 draw.text(
-(360, 80),
+(540, 120),
 "5",
 anchor="mm",
-font=font,
+font=font_timer,
 fill=(255,0,0),
-stroke_width=1,
+stroke_width=6,
 stroke_fill=(0,0,0)
 )
 
 draw.text(
-(360, 500),
+(540, 720),
 TOP_TEXT,
 anchor="mm",
-font=font,
+font=font_big,
 fill=(255,255,255),
-stroke_width=1,
+stroke_width=8,
 stroke_fill=(0,0,0)
 )
 
 draw.text(
-(360, 780),
+(540, 1210),
 BOTTOM_TEXT,
 anchor="mm",
-font=font,
+font=font_big,
 fill=(255,255,255),
-stroke_width=1,
+stroke_width=8,
 stroke_fill=(0,0,0)
 )
 
 draw.text(
-(360, 640),
+(540, 960),
 "VS",
 anchor="mm",
-font=font,
+font=font_vs,
 fill=(255,215,0),
-stroke_width=1,
+stroke_width=6,
 stroke_fill=(0,0,0)
 )
 
-canvas = canvas.resize((1080, 1920))
-
 canvas.save("battle.png")
-
-img = Image.open("battle.png")
-img = img.resize((1080,1920))
-img.save("battle.png")
 
 clip = ImageClip("battle.png").set_duration(3)
 
