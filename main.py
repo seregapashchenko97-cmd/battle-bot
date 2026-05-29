@@ -8,7 +8,7 @@ WIDTH = 720
 HEIGHT = 1280
 HALF = HEIGHT // 2
 
-BOT_TOKEN = "8330007893"
+BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
 CHAT_ID = "476718796"
 
 battles = [
@@ -17,12 +17,6 @@ battles = [
 "bottom_text": "LUXURY VILLA",
 "top": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?q=80&w=1800",
 "bottom": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=1800"
-},
-{
-"top_text": "MALDIVES",
-"bottom_text": "LAMBORGHINI",
-"top": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1800",
-"bottom": "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=1800"
 }
 ]
 
@@ -31,7 +25,10 @@ battle = random.choice(battles)
 def load_image(url, target_h):
 response = requests.get(url)
 
-img = Image.open(BytesIO(response.content)).convert("RGB")
+```
+img = Image.open(
+    BytesIO(response.content)
+).convert("RGB")
 
 scale = max(
     WIDTH / img.width,
@@ -58,6 +55,7 @@ img = img.crop(
 )
 
 return img
+```
 
 top_img = load_image(
 battle["top"],
@@ -79,23 +77,6 @@ canvas.paste(bottom_img, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-try:
-font_big = ImageFont.truetype(
-"DejaVuSans-Bold.ttf",
-170
-)
-
-font_vs = ImageFont.truetype(
-    "DejaVuSans-Bold.ttf",
-    340
-)
-
-timer_font = ImageFont.truetype(
-    "DejaVuSans-Bold.ttf",
-    220
-)
-
-except:
 font_big = ImageFont.load_default()
 font_vs = ImageFont.load_default()
 timer_font = ImageFont.load_default()
@@ -116,9 +97,7 @@ draw.text(
 battle["top_text"],
 anchor="mm",
 font=font_big,
-fill=(255,255,255),
-stroke_width=4,
-stroke_fill=(0,0,0)
+fill=(255,255,255)
 )
 
 draw.rectangle(
@@ -131,9 +110,7 @@ draw.text(
 battle["bottom_text"],
 anchor="mm",
 font=font_big,
-fill=(255,255,255),
-stroke_width=4,
-stroke_fill=(0,0,0)
+fill=(255,255,255)
 )
 
 draw.rectangle(
@@ -146,9 +123,7 @@ draw.text(
 "VS",
 anchor="mm",
 font=font_vs,
-fill=(255,215,0),
-stroke_width=6,
-stroke_fill=(0,0,0)
+fill=(255,215,0)
 )
 
 draw.rectangle(
@@ -161,17 +136,12 @@ draw.text(
 "5",
 anchor="mm",
 font=timer_font,
-fill=(255,50,50),
-stroke_width=6,
-stroke_fill=(0,0,0)
+fill=(255,50,50)
 )
 
 image_path = "battle.png"
 
-canvas.save(
-image_path,
-quality=95
-)
+canvas.save(image_path)
 
 clip = ImageClip(image_path).set_duration(3)
 
