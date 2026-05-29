@@ -1,9 +1,11 @@
 from PIL import Image
+
+Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 import requests
 from io import BytesIO
 import random
 from moviepy.editor import ImageClip
-import os
 
 # =========================
 # TELEGRAM
@@ -13,7 +15,7 @@ BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
 CHAT_ID = "476718796"
 
 # =========================
-# SIZE
+# VIDEO SIZE
 # =========================
 
 WIDTH = 1080
@@ -84,7 +86,7 @@ def load_image(url):
     return img
 
 # =========================
-# CREATE IMAGE
+# CREATE FINAL IMAGE
 # =========================
 
 top_img = load_image(battle["top"])
