@@ -61,9 +61,7 @@ canvas.paste(img2, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-font_big = ImageFont.load_default()
-font_vs = ImageFont.load_default()
-font_timer = ImageFont.load_default()
+font = ImageFont.load_default()
 
 draw.line(
 [(0, HALF), (WIDTH, HALF)],
@@ -72,12 +70,12 @@ width=8
 )
 
 draw.text(
-(360, 90),
+(360, 80),
 "5",
 anchor="mm",
-font=font_timer,
+font=font,
 fill=(255,0,0),
-stroke_width=3,
+stroke_width=1,
 stroke_fill=(0,0,0)
 )
 
@@ -85,9 +83,9 @@ draw.text(
 (360, 500),
 TOP_TEXT,
 anchor="mm",
-font=font_big,
+font=font,
 fill=(255,255,255),
-stroke_width=2,
+stroke_width=1,
 stroke_fill=(0,0,0)
 )
 
@@ -95,9 +93,9 @@ draw.text(
 (360, 780),
 BOTTOM_TEXT,
 anchor="mm",
-font=font_big,
+font=font,
 fill=(255,255,255),
-stroke_width=2,
+stroke_width=1,
 stroke_fill=(0,0,0)
 )
 
@@ -105,15 +103,19 @@ draw.text(
 (360, 640),
 "VS",
 anchor="mm",
-font=font_vs,
+font=font,
 fill=(255,215,0),
-stroke_width=2,
+stroke_width=1,
 stroke_fill=(0,0,0)
 )
 
 canvas = canvas.resize((1080, 1920))
 
 canvas.save("battle.png")
+
+img = Image.open("battle.png")
+img = img.resize((1080,1920))
+img.save("battle.png")
 
 clip = ImageClip("battle.png").set_duration(3)
 
