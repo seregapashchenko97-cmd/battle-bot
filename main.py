@@ -1,4 +1,4 @@
-```python id="q7m4xp"
+```python id="m5r8zt"
 from PIL import Image, ImageDraw, ImageFont
 
 Image.ANTIALIAS = Image.Resampling.LANCZOS
@@ -6,7 +6,7 @@ Image.ANTIALIAS = Image.Resampling.LANCZOS
 import requests
 from io import BytesIO
 import random
-from moviepy.editor import *
+from moviepy.editor import ImageClip
 
 # =========================
 # TELEGRAM
@@ -89,10 +89,20 @@ def load_image(url, target_h):
 # CREATE IMAGE
 # =========================
 
-top_img = load_image(battle["top"], HALF)
-bottom_img = load_image(battle["bottom"], HALF)
+top_img = load_image(
+    battle["top"],
+    HALF
+)
 
-canvas = Image.new("RGB", (WIDTH, HEIGHT))
+bottom_img = load_image(
+    battle["bottom"],
+    HALF
+)
+
+canvas = Image.new(
+    "RGB",
+    (WIDTH, HEIGHT)
+)
 
 canvas.paste(top_img, (0, 0))
 canvas.paste(bottom_img, (0, HALF))
@@ -222,17 +232,20 @@ canvas.convert("RGB").save(
 # VIDEO
 # =========================
 
-clip = ImageClip(image_path).set_duration(5)
+clip = ImageClip(image_path)
+
+clip = clip.set_duration(3)
 
 video_path = "battle.mp4"
 
 clip.write_videofile(
     video_path,
-    fps=24,
+    fps=20,
     codec="libx264",
     preset="ultrafast",
     audio=False,
-    threads=2
+    threads=1,
+    logger=None
 )
 
 # =========================
@@ -241,19 +254,17 @@ clip.write_videofile(
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
 
-files = {
-    "video": open(video_path, "rb")
-}
+with open(video_path, "rb") as video_file:
 
-data = {
-    "chat_id": CHAT_ID
-}
+    response = requests.post(
+        url,
+        data={
+            "chat_id": CHAT_ID
+        },
+        files={
+            "video": video_file
+        }
+    )
 
-requests.post(
-    url,
-    files=files,
-    data=data
-)
-
-print("DONE")
+print(response.text)
 ```
