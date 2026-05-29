@@ -106,11 +106,14 @@ logger=None
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
 
-with open("battle.mp4", "rb") as video:
+video = open("battle.mp4", "rb")
+
 requests.post(
 url,
 data={"chat_id": CHAT_ID},
 files={"video": video}
 )
+
+video.close()
 
 print("DONE")
