@@ -1,11 +1,6 @@
-Pillow
-requests
+Pillow==10.3.0
 moviepy==1.0.3
-imageio
-imageio-ffmpeg
-numpy<2
-decorator
-proglog
-tqdm
-setuptools
-wheel
+requests==2.32.3
+numpy==1.26.4
+imageio==2.34.1
+imageio-ffmpeg==0.5.1
