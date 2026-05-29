@@ -18,8 +18,8 @@ CHAT_ID = "476718796"
 # VIDEO SIZE
 # =========================
 
-WIDTH = 1080
-HEIGHT = 1920
+WIDTH = 720
+HEIGHT = 1280
 HALF_HEIGHT = HEIGHT // 2
 
 # =========================
@@ -86,7 +86,7 @@ def load_image(url):
     return img
 
 # =========================
-# CREATE FINAL IMAGE
+# CREATE IMAGE
 # =========================
 
 top_img = load_image(battle["top"])
@@ -104,28 +104,24 @@ image_path = "battle.jpg"
 
 final.save(
     image_path,
-    quality=95
+    quality=90
 )
 
 # =========================
 # CREATE VIDEO
 # =========================
 
-clip = ImageClip(image_path)
-
-clip = clip.set_duration(5)
-
-clip = clip.resize(
-    lambda t: 1 + 0.03 * t
-)
+clip = ImageClip(image_path).set_duration(4)
 
 video_path = "battle.mp4"
 
 clip.write_videofile(
     video_path,
-    fps=30,
+    fps=24,
     codec="libx264",
-    audio=False
+    preset="ultrafast",
+    audio=False,
+    threads=2
 )
 
 # =========================
