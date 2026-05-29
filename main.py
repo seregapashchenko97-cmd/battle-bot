@@ -7,7 +7,7 @@ WIDTH = 720
 HEIGHT = 1280
 HALF = HEIGHT // 2
 
-BOT_TOKEN = "8330007893"
+BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
 CHAT_ID = "476718796"
 
 TOP_TEXT = "PRIVATE JET"
@@ -61,11 +61,6 @@ canvas.paste(img2, (0, HALF))
 
 draw = ImageDraw.Draw(canvas)
 
-try:
-font_big = ImageFont.truetype("DejaVuSans-Bold.ttf", 90)
-font_vs = ImageFont.truetype("DejaVuSans-Bold.ttf", 180)
-font_timer = ImageFont.truetype("DejaVuSans-Bold.ttf", 130)
-except:
 font_big = ImageFont.load_default()
 font_vs = ImageFont.load_default()
 font_timer = ImageFont.load_default()
@@ -86,9 +81,7 @@ draw.text(
 "5",
 anchor="mm",
 font=font_timer,
-fill=(255,0,0),
-stroke_width=3,
-stroke_fill=(0,0,0)
+fill=(255,0,0)
 )
 
 draw.rectangle(
@@ -101,9 +94,7 @@ draw.text(
 TOP_TEXT,
 anchor="mm",
 font=font_big,
-fill=(255,255,255),
-stroke_width=3,
-stroke_fill=(0,0,0)
+fill=(255,255,255)
 )
 
 draw.rectangle(
@@ -116,9 +107,7 @@ draw.text(
 BOTTOM_TEXT,
 anchor="mm",
 font=font_big,
-fill=(255,255,255),
-stroke_width=3,
-stroke_fill=(0,0,0)
+fill=(255,255,255)
 )
 
 draw.rectangle(
@@ -131,18 +120,12 @@ draw.text(
 "VS",
 anchor="mm",
 font=font_vs,
-fill=(255,215,0),
-stroke_width=4,
-stroke_fill=(0,0,0)
+fill=(255,215,0)
 )
 
 canvas.save("battle.png")
 
 clip = ImageClip("battle.png").set_duration(3)
-
-clip = clip.resize(
-lambda t: 1 + 0.03 * t
-)
 
 clip.write_videofile(
 "battle.mp4",
