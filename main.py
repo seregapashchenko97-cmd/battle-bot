@@ -1,18 +1,16 @@
-from PIL import Image
-from moviepy.editor import ImageClip
+import requests
 
-img = Image.new("RGB", (540, 960), (255, 0, 0))
-img.save("test.png")
+BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
+CHAT_ID = "476718796"
 
-clip = ImageClip("test.png").set_duration(5)
+url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-clip.write_videofile(
-    "test.mp4",
-    fps=24,
-    codec="libx264",
-    audio=False,
-    preset="ultrafast",
-    logger=None
+r = requests.post(
+    url,
+    data={
+        "chat_id": CHAT_ID,
+        "text": "RAILWAY TELEGRAM TEST"
+    }
 )
 
-print("VIDEO OK")
+print(r.text)
