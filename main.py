@@ -1,16 +1,26 @@
-import requests
+import os
+import asyncio
 
-BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
-CHAT_ID = "476718796"
+from aiogram import Bot, Dispatcher
+from aiogram.filters import CommandStart
+from aiogram.types import Message
 
-url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-r = requests.post(
-    url,
-    data={
-        "chat_id": CHAT_ID,
-        "text": "RAILWAY TELEGRAM TEST"
-    }
-)
+bot = Bot(BOT_TOKEN)
+dp = Dispatcher()
 
-print(r.text)
+
+@dp.message(CommandStart())
+async def start(message: Message):
+    await message.answer(
+        "🎲 Генератор VS запущен"
+    )
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
