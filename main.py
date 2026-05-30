@@ -69,6 +69,23 @@ VS_POOL = [
     "Rock VS Classical"
 ]
 
+# Маппинг сложных слов на простые запросы для Unsplash
+QUERY_MAP = {
+    "Wealth": "money gold luxury",
+    "Peace": "nature calm zen",
+    "Fame": "spotlight crowd concert",
+    "Gaming": "video game controller",
+    "Cinema": "movie theater film",
+    "Classical": "piano orchestra music",
+    "PlayStation": "gaming console",
+    "Mars": "planet space red",
+    "Vacation": "holiday resort tropical",
+    "Career": "office work business",
+    "Rock": "rock concert guitar",
+    "Night": "city night dark",
+    "Day": "sunrise sunny sky",
+}
+
 user_choices = {}
 variant_storage = {}
 
@@ -89,24 +106,48 @@ def parse_vs(variant: str):
 
 
 def fetch_unsplash_image(query: str) -> Image.Image:
-    """Получает фото с Unsplash по запросу."""
     session = get_session()
-    url = "https://api.unsplash.com/photos/random"
-    params = {
-        "query": f"{query} dark cinematic",
-        "orientation": "landscape",
-        "content_filter": "high",
-    }
     headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
-    response = session.get(url, params=params, headers=headers, timeout=30)
-    response.raise_for_status()
-    data = response.json()
 
-    img_url = data["urls"]["regular"]
-    img_response = session.get(img_url, timeout=30)
-    img_response.raise_for_status()
+    # Используем маппинг если есть
+    search_query = QUERY_MAP.get(query, query)
 
-    return Image.open(io.BytesIO(img_response.content)).convert("RGB")
+    # Попытка 1 — с маппингом
+    try:
+        url = "https://api.unsplash.com/photos/random"
+        params = {"query": search_query, "orientation": "landscape"}
+        response = session.get(url, params=params, headers=headers, timeout=30)
+        response.raise_for_status()
+        img_url = response.json()["urls"]["regular"]
+        img_resp = session.get(img_url, timeout=30)
+        img_resp.raise_for_status()
+        return Image.open(io.BytesIO(img_resp.content)).convert("RGB")
+    except Exception:
+        pass
+
+    # Попытка 2 — просто первое слово
+    try:
+        simple = query.split()[0]
+        params = {"query": simple, "orientation": "landscape"}
+        response = session.get(url, params=params, headers=headers, timeout=30)
+        response.raise_for_status()
+        img_url = response.json()["urls"]["regular"]
+        img_resp = session.get(img_url, timeout=30)
+        img_resp.raise_for_status()
+        return Image.open(io.BytesIO(img_resp.content)).convert("RGB")
+    except Exception:
+        pass
+
+    # Fallback — тёмная заглушка
+    img = Image.new("RGB", (1080, 960), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(FONT_PATH, 80)
+    except Exception:
+        font = ImageFont.load_default()
+    draw.text((540, 480), query.upper(), font=font,
+              fill=(100, 100, 100), anchor="mm")
+    return img
 
 
 def fit_image(im: Image.Image, w: int, h: int) -> Image.Image:
