@@ -29,9 +29,7 @@ from aiogram.types import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-HF_TOKEN = os.getenv("HF_TOKEN", "")
-
-HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -90,20 +88,25 @@ def parse_vs(variant: str):
     return "Left", "Right"
 
 
-def generate_image_hf(prompt: str) -> Image.Image:
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "inputs": f"{prompt}, cinematic photo, dramatic lighting, dark background, high quality, no text",
-        "parameters": {
-            "width": 1080,
-            "height": 960,
-            "num_inference_steps": 25,
-        }
-    }
+def fetch_unsplash_image(query: str) -> Image.Image:
+    """Получает фото с Unsplash по запросу."""
     session = get_session()
-    response = session.post(HF_API_URL, headers=headers, json=payload, timeout=120)
+    url = "https://api.unsplash.com/photos/random"
+    params = {
+        "query": f"{query} dark cinematic",
+        "orientation": "landscape",
+        "content_filter": "high",
+    }
+    headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
+    response = session.get(url, params=params, headers=headers, timeout=30)
     response.raise_for_status()
-    return Image.open(io.BytesIO(response.content)).convert("RGB")
+    data = response.json()
+
+    img_url = data["urls"]["regular"]
+    img_response = session.get(img_url, timeout=30)
+    img_response.raise_for_status()
+
+    return Image.open(io.BytesIO(img_response.content)).convert("RGB")
 
 
 def fit_image(im: Image.Image, w: int, h: int) -> Image.Image:
@@ -195,11 +198,8 @@ def build_battle_clip(left_label: str, right_label: str,
 
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
     video.write_videofile(
-        out_path,
-        fps=FPS,
-        codec="mpeg4",
-        audio_codec="aac",
-        ffmpeg_params=["-q:v", "5"],
+        out_path, fps=FPS, codec="mpeg4",
+        audio_codec="aac", ffmpeg_params=["-q:v", "5"],
         logger=None
     )
     return out_path
@@ -210,11 +210,8 @@ def concat_clips(clip_paths: list, tmp_dir: str) -> str:
     final = concatenate_videoclips(clips, method="compose")
     out_path = os.path.join(tmp_dir, "final_vs.mp4")
     final.write_videofile(
-        out_path,
-        fps=FPS,
-        codec="mpeg4",
-        audio_codec="aac",
-        ffmpeg_params=["-q:v", "5"],
+        out_path, fps=FPS, codec="mpeg4",
+        audio_codec="aac", ffmpeg_params=["-q:v", "5"],
         logger=None
     )
     for c in clips:
@@ -292,7 +289,7 @@ async def generate_video(message: Message):
         await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
         return
 
-    await message.answer("🎬 Генерирую изображения и видео...\n⏳ Подожди 2-3 минуты!")
+    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 1-2 минуты!")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -302,8 +299,8 @@ async def generate_video(message: Message):
                 left_label, right_label = parse_vs(variant)
                 await message.answer(f"🖼 Батл {idx}/5: {left_label} VS {right_label}")
 
-                left_img = generate_image_hf(left_label)
-                right_img = generate_image_hf(right_label)
+                left_img = fetch_unsplash_image(left_label)
+                right_img = fetch_unsplash_image(right_label)
 
                 clip_path = build_battle_clip(
                     left_label, right_label,
