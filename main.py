@@ -47,23 +47,82 @@ keyboard = ReplyKeyboardMarkup(
 )
 
 VS_POOL = [
-    "Love VS Money", "Burger VS Pizza", "Dog VS Cat",
-    "Beach VS Mountains", "Travel VS Home", "PlayStation VS PC",
-    "Coffee VS Tea", "BMW VS Mercedes", "Fame VS Peace",
-    "iPhone VS Android", "Sports VS Gaming", "Night VS Day",
-    "Cinema VS Books", "Football VS Basketball", "Vacation VS Career",
-    "Wealth VS Love", "Mars VS Earth", "Lion VS Wolf",
-    "Ferrari VS Lamborghini", "Rock VS Classical"
+    "Money VS Love",
+    "Fame VS Privacy",
+    "Risk VS Safety",
+    "Hustle VS Balance",
+    "Loyalty VS Ambition",
+    "Truth VS Kindness",
+    "Freedom VS Security",
+    "Passion VS Stability",
+    "Revenge VS Forgiveness",
+    "Logic VS Intuition",
+    "Power VS Wisdom",
+    "Success VS Happiness",
+    "Being Right VS Being Kind",
+    "Short Fun VS Long Goals",
+    "Comfort Zone VS Growth",
+    "Alpha VS Sigma",
+    "Street Smart VS Book Smart",
+    "Working Hard VS Working Smart",
+    "Being Loved VS Being Respected",
+    "Living Now VS Planning Future",
+    "Ferrari VS Lamborghini",
+    "iPhone VS Android",
+    "Nike VS Adidas",
+    "Batman VS Spider-Man",
+    "Ocean VS Mountains",
+    "Day Person VS Night Owl",
+    "Coffee VS Energy Drink",
+    "Leader VS Lone Wolf",
+    "Billionaire VS Happy Poor",
+    "Real Friends VS Many Followers",
 ]
 
 QUERY_MAP = {
-    "Wealth": "money gold luxury", "Peace": "nature calm",
-    "Fame": "spotlight concert", "Gaming": "game controller",
-    "Cinema": "movie theater", "Classical": "piano orchestra",
-    "PlayStation": "gaming console", "Mars": "space planet",
-    "Vacation": "holiday resort", "Career": "office business",
-    "Rock": "rock concert guitar", "Night": "city night",
-    "Day": "sunrise sky",
+    "Money": "cash money luxury",
+    "Love": "couple romance",
+    "Fame": "spotlight celebrity crowd",
+    "Privacy": "alone solitude peaceful",
+    "Risk": "extreme sport danger",
+    "Safety": "protection secure calm",
+    "Hustle": "work hard grind",
+    "Balance": "yoga zen nature",
+    "Loyalty": "friendship trust",
+    "Ambition": "success businessman",
+    "Truth": "light clarity",
+    "Kindness": "help charity",
+    "Freedom": "open road travel sky",
+    "Security": "home safe family",
+    "Passion": "fire energy dance",
+    "Stability": "house family stability",
+    "Revenge": "dark angry storm",
+    "Forgiveness": "peace white light",
+    "Logic": "chess math science",
+    "Intuition": "meditation spiritual",
+    "Power": "strength muscle leader",
+    "Wisdom": "books elder nature",
+    "Success": "trophy winner podium",
+    "Happiness": "smile laugh friends",
+    "Alpha": "lion strong leader",
+    "Sigma": "lone wolf solitary",
+    "Ferrari": "red ferrari sports car",
+    "Lamborghini": "lamborghini supercar",
+    "iPhone": "apple iphone smartphone",
+    "Android": "samsung android phone",
+    "Nike": "nike shoes sport",
+    "Adidas": "adidas sneakers",
+    "Batman": "dark night city",
+    "Spider-Man": "city rooftop hero",
+    "Ocean": "ocean waves blue",
+    "Mountains": "mountain peak snow",
+    "Coffee": "coffee cup morning",
+    "Energy Drink": "energy drink neon",
+    "Leader": "leadership team business",
+    "Billionaire": "yacht luxury mansion",
+    "Growth": "plant growing success",
+    "Night Owl": "night city dark",
+    "Day Person": "sunrise morning fresh",
 }
 
 user_choices = {}
@@ -106,11 +165,20 @@ def fetch_unsplash_image(query):
 
 
 def fit_image(im, w, h):
+    """Растягиваем картинку чтобы заполнить всю область (crop по центру)."""
     im = im.copy()
-    im.thumbnail((w, h), Image.LANCZOS)
-    bg = Image.new("RGB", (w, h), (15, 15, 15))
-    bg.paste(im, ((w - im.width) // 2, (h - im.height) // 2))
-    return bg
+    # Масштабируем так чтобы заполнить весь прямоугольник
+    ratio_w = w / im.width
+    ratio_h = h / im.height
+    ratio = max(ratio_w, ratio_h)
+    new_w = int(im.width * ratio)
+    new_h = int(im.height * ratio)
+    im = im.resize((new_w, new_h), Image.LANCZOS)
+    # Обрезаем по центру
+    x = (new_w - w) // 2
+    y = (new_h - h) // 2
+    im = im.crop((x, y, x + w, y + h))
+    return im
 
 
 def build_frame(left_label, right_label, left_img, right_img, countdown=None):
@@ -139,8 +207,8 @@ def build_frame(left_label, right_label, left_img, right_img, countdown=None):
     draw.text((W//2, HALF + 130), right_label.upper(), font=flb,
               fill=(255, 255, 255), anchor="mt", stroke_width=3, stroke_fill=(0, 0, 0))
     if countdown is not None:
-        draw.text((W - 60, H - 60), str(countdown), font=ftm,
-                  fill=(255, 50, 50), anchor="rb", stroke_width=8, stroke_fill=(0, 0, 0))
+        draw.text((60, 60), str(countdown), font=ftm,
+                  fill=(255, 50, 50), anchor="lt", stroke_width=8, stroke_fill=(0, 0, 0))
     return card
 
 
