@@ -48,35 +48,35 @@ keyboard = ReplyKeyboardMarkup(
 
 VS_POOL = [
     "Money VS Love",
-    "Fame VS Privacy",
-    "Risk VS Safety",
-    "Hustle VS Balance",
+    "Fame VS Happiness",
     "Loyalty VS Ambition",
-    "Truth VS Kindness",
-    "Freedom VS Security",
-    "Passion VS Stability",
     "Revenge VS Forgiveness",
-    "Logic VS Intuition",
-    "Power VS Wisdom",
-    "Success VS Happiness",
-    "Being Right VS Being Kind",
-    "Short Fun VS Long Goals",
-    "Comfort Zone VS Growth",
+    "Power VS Freedom",
+    "Hustle VS Balance",
     "Alpha VS Sigma",
+    "Truth VS Kindness",
+    "Passion VS Reason",
+    "Silence VS Reaction",
+    "Respected VS Loved",
+    "Rich Alone VS Poor Together",
+    "Short Pleasure VS Long Success",
+    "Fake Smile VS Real Pain",
+    "Hard Truth VS Sweet Lie",
+    "One Real Friend VS Thousand Fans",
+    "Safe Life VS Wild Life",
     "Street Smart VS Book Smart",
-    "Working Hard VS Working Smart",
-    "Being Loved VS Being Respected",
-    "Living Now VS Planning Future",
+    "Work Hard VS Work Smart",
+    "Live Now VS Plan Forever",
     "Ferrari VS Lamborghini",
     "iPhone VS Android",
     "Nike VS Adidas",
-    "Batman VS Spider-Man",
-    "Ocean VS Mountains",
-    "Day Person VS Night Owl",
-    "Coffee VS Energy Drink",
+    "Rolls Royce VS Bugatti",
+    "Las Vegas VS Dubai",
+    "Gym VS Couch",
+    "Billionaire VS Rock Star",
+    "Love At First Sight VS Deep Connection",
+    "Die Famous VS Live Unknown",
     "Leader VS Lone Wolf",
-    "Billionaire VS Happy Poor",
-    "Real Friends VS Many Followers",
 ]
 
 QUERY_MAP = {
@@ -183,32 +183,46 @@ def fit_image(im, w, h):
 
 def build_frame(left_label, right_label, left_img, right_img, countdown=None):
     HALF = H // 2
-    card = Image.new("RGB", (W, H), (10, 10, 10))
-    card.paste(fit_image(left_img, W, HALF), (0, 0))
-    card.paste(fit_image(right_img, W, HALF), (0, HALF))
+    card = Image.new("RGB", (W, H), (0, 0, 0))
 
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(overlay).rectangle([0, HALF - 160, W, HALF + 160], fill=(0, 0, 0, 220))
-    card = Image.alpha_composite(card.convert("RGBA"), overlay).convert("RGB")
+    # Картинки заполняют всё пространство до красной линии
+    top = fit_image(left_img, W, HALF)
+    bot = fit_image(right_img, W, HALF)
+    card.paste(top, (0, 0))
+    card.paste(bot, (0, HALF))
 
     draw = ImageDraw.Draw(card)
+
     try:
-        fvs = ImageFont.truetype(FONT_PATH, 150)
-        flb = ImageFont.truetype(FONT_PATH, 72)
-        ftm = ImageFont.truetype(FONT_PATH, 200)
+        fvs = ImageFont.truetype(FONT_PATH, 120)
+        flb = ImageFont.truetype(FONT_PATH, 55)
+        ftm = ImageFont.truetype(FONT_PATH, 160)
     except Exception:
         fvs = flb = ftm = ImageFont.load_default()
 
-    draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=6)
+    # Тёмная полоса только под текст у линии
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(overlay).rectangle([0, HALF - 120, W, HALF + 120], fill=(0, 0, 0, 200))
+    card = Image.alpha_composite(card.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(card)
+
+    # Красная линия
+    draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=8)
+
+    # VS
     draw.text((W//2, HALF), "VS", font=fvs, fill=(220, 30, 30), anchor="mm",
-              stroke_width=5, stroke_fill=(0, 0, 0))
-    draw.text((W//2, HALF - 130), left_label.upper(), font=flb,
+              stroke_width=4, stroke_fill=(0, 0, 0))
+
+    # Названия
+    draw.text((W//2, HALF - 100), left_label.upper(), font=flb,
               fill=(255, 255, 255), anchor="mb", stroke_width=3, stroke_fill=(0, 0, 0))
-    draw.text((W//2, HALF + 130), right_label.upper(), font=flb,
+    draw.text((W//2, HALF + 100), right_label.upper(), font=flb,
               fill=(255, 255, 255), anchor="mt", stroke_width=3, stroke_fill=(0, 0, 0))
+
+    # Таймер левый верхний угол
     if countdown is not None:
-        draw.text((60, 60), str(countdown), font=ftm,
-                  fill=(255, 50, 50), anchor="lt", stroke_width=8, stroke_fill=(0, 0, 0))
+        draw.text((50, 50), str(countdown), font=ftm,
+                  fill=(255, 50, 50), anchor="lt", stroke_width=6, stroke_fill=(0, 0, 0))
     return card
 
 
