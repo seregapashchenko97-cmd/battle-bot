@@ -3,10 +3,10 @@ import random
 import io
 import os
 import re
+import base64
 
 from PIL import Image, ImageDraw, ImageFont
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -22,7 +22,7 @@ from aiogram.types import (
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE")
 GEMINI_API_KEY = os.getenv("AQ.Ab8RN6LR4OekPY9fbtChzKj3GdL-98wUvUHlJTzpHbCSYWNpLg")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -76,23 +76,25 @@ def parse_vs(variant: str):
 
 
 def generate_image_via_gemini(prompt: str) -> Image.Image:
-    result = client.models.generate_images(
-        model="imagen-3.0-generate-002",
-        prompt=prompt,
-        config=types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio="1:1",
-            safety_filter_level="BLOCK_ONLY_HIGH",
-            person_generation="ALLOW_ADULT",
+    """Генерирует картинку через Gemini 2.0 Flash (нативная генерация изображений)."""
+    model = genai.GenerativeModel("gemini-2.0-flash-exp-image-generation")
+
+    response = model.generate_content(
+        f"Generate a high quality cinematic image: {prompt}. Dark dramatic background, no text, no watermark.",
+        generation_config=genai.GenerationConfig(
+            response_modalities=["image", "text"]
         )
     )
-    img_bytes = result.generated_images[0].image.image_bytes
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-    # Обрезаем нижние 5% — водяной знак
-    w, h = img.size
-    img = img.crop((0, 0, w, int(h * 0.95)))
-    return img
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+            img_bytes = part.inline_data.data
+            # data может быть bytes или base64 строкой
+            if isinstance(img_bytes, str):
+                img_bytes = base64.b64decode(img_bytes)
+            return Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+    raise ValueError("Gemini не вернул изображение")
 
 
 def fit_image(im: Image.Image, w: int, h: int) -> Image.Image:
@@ -114,7 +116,7 @@ def build_card(left_label: str, right_label: str,
     card.paste(fit_image(left_img, W, HALF), (0, 0))
     card.paste(fit_image(right_img, W, HALF), (0, HALF))
 
-    # Тёмные оверлеи для текста
+    # Тёмные оверлеи
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ov = ImageDraw.Draw(overlay)
     ov.rectangle([0, 0, W, 200], fill=(0, 0, 0, 170))
@@ -124,7 +126,6 @@ def build_card(left_label: str, right_label: str,
 
     draw = ImageDraw.Draw(card)
 
-    # Шрифты
     try:
         font_vs = ImageFont.truetype(FONT_PATH, 160)
         font_label = ImageFont.truetype(FONT_PATH, 80)
@@ -136,37 +137,16 @@ def build_card(left_label: str, right_label: str,
     draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=8)
 
     # Верхний текст
-    draw.text(
-        (W // 2, 100),
-        left_label.upper(),
-        font=font_label,
-        fill=(255, 255, 255),
-        anchor="mm",
-        stroke_width=3,
-        stroke_fill=(0, 0, 0)
-    )
+    draw.text((W // 2, 100), left_label.upper(), font=font_label,
+              fill=(255, 255, 255), anchor="mm", stroke_width=3, stroke_fill=(0, 0, 0))
 
-    # VS по центру
-    draw.text(
-        (W // 2, HALF),
-        "VS",
-        font=font_vs,
-        fill=(220, 30, 30),
-        anchor="mm",
-        stroke_width=6,
-        stroke_fill=(0, 0, 0)
-    )
+    # VS
+    draw.text((W // 2, HALF), "VS", font=font_vs,
+              fill=(220, 30, 30), anchor="mm", stroke_width=6, stroke_fill=(0, 0, 0))
 
     # Нижний текст
-    draw.text(
-        (W // 2, H - 100),
-        right_label.upper(),
-        font=font_label,
-        fill=(255, 255, 255),
-        anchor="mm",
-        stroke_width=3,
-        stroke_fill=(0, 0, 0)
-    )
+    draw.text((W // 2, H - 100), right_label.upper(), font=font_label,
+              fill=(255, 255, 255), anchor="mm", stroke_width=3, stroke_fill=(0, 0, 0))
 
     buf = io.BytesIO()
     card.save(buf, format="PNG")
@@ -176,10 +156,7 @@ def build_card(left_label: str, right_label: str,
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer(
-        "🎲 Генератор VS запущен",
-        reply_markup=keyboard
-    )
+    await message.answer("🎲 Генератор VS запущен", reply_markup=keyboard)
 
 
 @dp.message(F.text == "🎲 Генерация вариантов")
@@ -255,12 +232,8 @@ async def generate_images(message: Message):
     )
 
     try:
-        left_img = generate_image_via_gemini(
-            f"Cinematic photo of {left_label}, dramatic dark background, high detail, no text"
-        )
-        right_img = generate_image_via_gemini(
-            f"Cinematic photo of {right_label}, dramatic dark background, high detail, no text"
-        )
+        left_img = generate_image_via_gemini(left_label)
+        right_img = generate_image_via_gemini(right_label)
 
         card_bytes = build_card(left_label, right_label, left_img, right_img)
 
