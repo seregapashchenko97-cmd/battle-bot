@@ -1,13 +1,15 @@
-import requests
-from io import BytesIO
-from PIL import Image
+from moviepy.editor import ColorClip
 
-response = requests.get("https://picsum.photos/1080/1920")
+clip = ColorClip(
+size=(1080, 1920),
+color=(255, 0, 0),
+duration=3
+)
 
-img = Image.open(BytesIO(response.content)).convert("RGB")
+clip.write_videofile(
+"test.mp4",
+fps=30,
+codec="libx264"
+)
 
-print(img.size)
-
-img.save("test.jpg")
-
-print("DONE")
+print("VIDEO CREATED")
