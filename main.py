@@ -7,6 +7,7 @@ import requests
 import tempfile
 import subprocess
 import numpy as np
+import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -22,6 +23,9 @@ from aiogram.types import (
     CallbackQuery,
     FSInputFile
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
@@ -68,7 +72,7 @@ variant_storage = {}
 
 def get_session():
     session = requests.Session()
-    retry = Retry(total=3, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
+    retry = Retry(total=2, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
 
@@ -79,19 +83,24 @@ def parse_vs(variant):
 
 
 def fetch_unsplash_image(query):
+    logger.info(f"Fetching image for: {query}")
     session = get_session()
     headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
     for q in [QUERY_MAP.get(query, query), query.split()[0], "nature"]:
         try:
             r = session.get("https://api.unsplash.com/photos/random",
                            params={"query": q, "orientation": "landscape"},
-                           headers=headers, timeout=30)
+                           headers=headers, timeout=20)
             r.raise_for_status()
-            img_r = session.get(r.json()["urls"]["regular"], timeout=30)
+            img_url = r.json()["urls"]["small"]  # small вместо regular — быстрее
+            img_r = session.get(img_url, timeout=20)
             img_r.raise_for_status()
+            logger.info(f"Image fetched for: {query}")
             return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed query '{q}': {e}")
             continue
+    logger.info(f"Using fallback for: {query}")
     img = Image.new("RGB", (W, H // 2), (20, 20, 20))
     return img
 
@@ -145,71 +154,44 @@ def make_beep_pcm(freq=880, sr=44100, duration=0.12):
 
 
 def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, index):
-    """Создаём видео через ffmpeg напрямую из raw frames — без moviepy."""
+    logger.info(f"Building clip {index}: {left_label} VS {right_label}")
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
+    audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
 
-    # Собираем все фреймы и аудио
     frames_bytes = b""
     audio_bytes = b""
 
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
-        frame_rgb = frame.tobytes()  # raw RGB
-
-        # Каждую секунду = FPS фреймов
+        frame_rgb = frame.tobytes()
         for _ in range(FPS):
             frames_bytes += frame_rgb
-
         freq = 1200 if sec == 1 else 880
         audio_bytes += make_beep_pcm(freq=freq)
 
-    # ffmpeg: читает raw RGB видео + raw PCM аудио → mp4
+    with open(audio_path, "wb") as f:
+        f.write(audio_bytes)
+
     cmd = [
         "ffmpeg", "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
         "-s", f"{W}x{H}", "-pix_fmt", "rgb24",
         "-r", str(FPS), "-i", "pipe:0",
-        "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", "pipe:3",
-        "-vcodec", "mpeg4", "-q:v", "5",
-        "-acodec", "aac",
-        "-shortest",
-        out_path
-    ]
-
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        pass_fds=(3,) if False else (),
-    )
-
-    # Пишем видео через stdin, аудио через отдельный файл
-    # Упрощённый вариант — сначала пишем аудио во временный файл
-    audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
-    with open(audio_path, "wb") as f:
-        f.write(audio_bytes)
-
-    cmd2 = [
-        "ffmpeg", "-y",
-        "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{W}x{H}", "-pix_fmt", "rgb24",
-        "-r", str(FPS), "-i", "pipe:0",
         "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", audio_path,
-        "-vcodec", "mpeg4", "-q:v", "5",
+        "-vcodec", "mpeg4", "-q:v", "8",
         "-acodec", "aac",
-        "-shortest",
-        out_path
+        "-shortest", out_path
     ]
 
-    proc2 = subprocess.Popen(cmd2, stdin=subprocess.PIPE,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    proc2.communicate(input=frames_bytes)
-
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc.communicate(input=frames_bytes)
+    logger.info(f"Clip {index} done")
     return out_path
 
 
 def concat_with_ffmpeg(clip_paths, tmp_dir):
+    logger.info("Concatenating clips")
     list_file = os.path.join(tmp_dir, "clips.txt")
     with open(list_file, "w") as f:
         for p in clip_paths:
@@ -219,6 +201,7 @@ def concat_with_ffmpeg(clip_paths, tmp_dir):
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", list_file, "-c", "copy", out_path
     ], check=True, capture_output=True)
+    logger.info("Concat done")
     return out_path
 
 
@@ -282,7 +265,7 @@ async def generate_video(message: Message):
         await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
         return
 
-    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 1-2 минуты!")
+    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 2-3 минуты!")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -305,6 +288,7 @@ async def generate_video(message: Message):
                 supports_streaming=True
             )
     except Exception as e:
+        logger.error(f"Error: {e}", exc_info=True)
         await message.answer(f"❌ Ошибка:\n{e}")
 
 
