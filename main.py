@@ -4,6 +4,8 @@ import io
 import os
 import re
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, F
@@ -60,6 +62,18 @@ user_choices = {}
 variant_storage = {}
 
 
+def get_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[500, 502, 503, 504]
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    return session
+
+
 def strip_emoji(text: str) -> str:
     return re.sub(r'[^\w\s\-А-Яа-яёЁA-Za-z0-9]', '', text).strip()
 
@@ -72,13 +86,13 @@ def parse_vs(variant: str):
 
 
 def generate_image_pollinations(prompt: str) -> Image.Image:
-    """Генерирует картинку через Pollinations AI — бесплатно, без ключа."""
     safe_prompt = requests.utils.quote(
         f"{prompt}, cinematic, dramatic lighting, dark background, high quality, no text, no watermark"
     )
     url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1080&height=960&nologo=true&model=flux"
 
-    response = requests.get(url, timeout=60)
+    session = get_session()
+    response = session.get(url, timeout=120)
     response.raise_for_status()
 
     return Image.open(io.BytesIO(response.content)).convert("RGB")
@@ -210,7 +224,7 @@ async def generate_images(message: Message):
     left_label, right_label = parse_vs(first_variant)
 
     await message.answer(
-        f"🎨 Генерирую карточку:\n{first_variant}\n\n⏳ Подожди ~20 секунд..."
+        f"🎨 Генерирую карточку:\n{first_variant}\n\n⏳ Подожди ~40 секунд..."
     )
 
     try:
