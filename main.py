@@ -76,20 +76,16 @@ def parse_vs(variant: str):
 
 
 def generate_image_via_gemini(prompt: str) -> Image.Image:
-    """Генерирует картинку через Gemini 2.0 Flash (нативная генерация изображений)."""
     model = genai.GenerativeModel("gemini-2.0-flash-exp-image-generation")
 
     response = model.generate_content(
         f"Generate a high quality cinematic image: {prompt}. Dark dramatic background, no text, no watermark.",
-        generation_config=genai.GenerationConfig(
-            response_modalities=["image", "text"]
-        )
+        generation_config={"response_modalities": ["IMAGE"]}
     )
 
     for part in response.candidates[0].content.parts:
-        if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.mime_type.startswith("image/"):
             img_bytes = part.inline_data.data
-            # data может быть bytes или base64 строкой
             if isinstance(img_bytes, str):
                 img_bytes = base64.b64decode(img_bytes)
             return Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -116,7 +112,6 @@ def build_card(left_label: str, right_label: str,
     card.paste(fit_image(left_img, W, HALF), (0, 0))
     card.paste(fit_image(right_img, W, HALF), (0, HALF))
 
-    # Тёмные оверлеи
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ov = ImageDraw.Draw(overlay)
     ov.rectangle([0, 0, W, 200], fill=(0, 0, 0, 170))
@@ -133,18 +128,14 @@ def build_card(left_label: str, right_label: str,
         font_vs = ImageFont.load_default()
         font_label = ImageFont.load_default()
 
-    # Разделительная линия
     draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=8)
 
-    # Верхний текст
     draw.text((W // 2, 100), left_label.upper(), font=font_label,
               fill=(255, 255, 255), anchor="mm", stroke_width=3, stroke_fill=(0, 0, 0))
 
-    # VS
     draw.text((W // 2, HALF), "VS", font=font_vs,
               fill=(220, 30, 30), anchor="mm", stroke_width=6, stroke_fill=(0, 0, 0))
 
-    # Нижний текст
     draw.text((W // 2, H - 100), right_label.upper(), font=font_label,
               fill=(255, 255, 255), anchor="mm", stroke_width=3, stroke_fill=(0, 0, 0))
 
