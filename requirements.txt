@@ -4,3 +4,4 @@ requests==2.32.3
 numpy==1.26.4
 imageio==2.34.1
 imageio-ffmpeg==0.5.1
+aiogram==3.13.1
