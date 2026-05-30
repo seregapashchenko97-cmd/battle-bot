@@ -1,15 +1,10 @@
-from moviepy.editor import ColorClip
+import subprocess
 
-clip = ColorClip(
-size=(1080, 1920),
-color=(255, 0, 0),
-duration=3
+result = subprocess.run(
+["ffmpeg", "-version"],
+capture_output=True,
+text=True
 )
 
-clip.write_videofile(
-"test.mp4",
-fps=30,
-codec="libx264"
-)
-
-print("VIDEO CREATED")
+print(result.stdout)
+print("FFMPEG TEST OK")
