@@ -1,58 +1,84 @@
 import asyncio
+import os
+
+import google.generativeai as genai
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton
+Message,
+ReplyKeyboardMarkup,
+KeyboardButton
 )
 
-BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
+BOT_TOKEN = "ТВОЙ_ТОКЕН_БОТА"
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🎲 Генерация вариантов")]
-    ],
-    resize_keyboard=True
+keyboard=[
+[KeyboardButton(text="🎲 Генерация вариантов")]
+],
+resize_keyboard=True
 )
-
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer(
-        "🎲 Генератор VS запущен",
-        reply_markup=keyboard
-    )
-
+await message.answer(
+"🎲 Генератор VS запущен",
+reply_markup=keyboard
+)
 
 @dp.message(F.text == "🎲 Генерация вариантов")
 async def generate(message: Message):
 
-    variants = [
-        "❤️ Любовь VS 💰 Деньги",
-        "🍔 Бургер VS 🎫 Билет на концерт",
-        "🏝 Отдых VS 🚗 Новая машина",
-        "🐶 Собака VS 🐱 Кот",
-        "✈️ Путешествие VS 🏠 Дом мечты"
-    ]
+```
+await message.answer("⏳ Генерирую варианты...")
 
-    text = "🔥 Варианты:\n\n"
+prompt = """
+```
 
-    for i, item in enumerate(variants, start=1):
-        text += f"{i}. {item}\n"
+Придумай 5 вирусных сравнений для формата VS.
 
-    await message.answer(text)
+Примеры:
+Любовь VS Деньги
+Бургер VS Билет на концерт
+Собака VS Кот
 
+Требования:
+
+* Ровно 5 вариантов
+* Каждый вариант с новой строки
+* Без нумерации
+* Короткие и понятные темы
+* Темы должны быть разными
+* Формат строго: X VS Y
+  """
+
+  try:
+  response = model.generate_content(prompt)
+
+  ```
+    await message.answer(
+        "🔥 Варианты:\n\n" + response.text
+    )
+  ```
+
+  except Exception as e:
+  await message.answer(
+  f"❌ Ошибка Gemini:\n{e}"
+  )
 
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+await bot.delete_webhook(drop_pending_updates=True)
+await dp.start_polling(bot)
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
-    
+if **name** == "**main**":
+asyncio.run(main())
