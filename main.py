@@ -10,7 +10,7 @@ from aiogram.types import (
 )
  
 BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
-GEMINI_API_KEY = "AQ.Ab8RN6Lb9ggtfZD1T6vKrmxXhYZ1QtjNPa427Fx_VScy9pcrhw"
+GEMINI_API_KEY = "AQ.Ab8RN6LR4OekPY9fbtChzKj3GdL-98wUvUHlJTzpHbCSYWNpLg"
  
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
