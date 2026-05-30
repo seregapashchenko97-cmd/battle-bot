@@ -3,10 +3,9 @@ import random
 import io
 import os
 import re
-import base64
+import requests
 
 from PIL import Image, ImageDraw, ImageFont
-import google.generativeai as genai
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -20,9 +19,6 @@ from aiogram.types import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE")
-GEMINI_API_KEY = os.getenv("AQ.Ab8RN6LR4OekPY9fbtChzKj3GdL-98wUvUHlJTzpHbCSYWNpLg")
-
-genai.configure(api_key=GEMINI_API_KEY)
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -75,22 +71,17 @@ def parse_vs(variant: str):
     return "Left", "Right"
 
 
-def generate_image_via_gemini(prompt: str) -> Image.Image:
-    model = genai.GenerativeModel("gemini-2.0-flash-exp-image-generation")
-
-    response = model.generate_content(
-        f"Generate a high quality cinematic image: {prompt}. Dark dramatic background, no text, no watermark.",
-        generation_config={"response_modalities": ["IMAGE"]}
+def generate_image_pollinations(prompt: str) -> Image.Image:
+    """Генерирует картинку через Pollinations AI — бесплатно, без ключа."""
+    safe_prompt = requests.utils.quote(
+        f"{prompt}, cinematic, dramatic lighting, dark background, high quality, no text, no watermark"
     )
+    url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1080&height=960&nologo=true&model=flux"
 
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.mime_type.startswith("image/"):
-            img_bytes = part.inline_data.data
-            if isinstance(img_bytes, str):
-                img_bytes = base64.b64decode(img_bytes)
-            return Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
 
-    raise ValueError("Gemini не вернул изображение")
+    return Image.open(io.BytesIO(response.content)).convert("RGB")
 
 
 def fit_image(im: Image.Image, w: int, h: int) -> Image.Image:
@@ -219,12 +210,12 @@ async def generate_images(message: Message):
     left_label, right_label = parse_vs(first_variant)
 
     await message.answer(
-        f"🎨 Генерирую карточку:\n{first_variant}\n\n⏳ Подожди ~30 секунд..."
+        f"🎨 Генерирую карточку:\n{first_variant}\n\n⏳ Подожди ~20 секунд..."
     )
 
     try:
-        left_img = generate_image_via_gemini(left_label)
-        right_img = generate_image_via_gemini(right_label)
+        left_img = generate_image_pollinations(left_label)
+        right_img = generate_image_pollinations(right_label)
 
         card_bytes = build_card(left_label, right_label, left_img, right_img)
 
