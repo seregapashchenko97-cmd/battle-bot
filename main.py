@@ -36,6 +36,8 @@ HF_API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stab
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
+print("BOT TOKEN LENGTH:", len(BOT_TOKEN))
+
 FONT_PATH = "Anton-Regular.ttf"
 CLIP_DURATION = 5
 FPS = 24
@@ -326,6 +328,11 @@ async def generate_video(message: Message):
 
 
 async def main():
+    me = await bot.get_me()
+
+    print("BOT ID:", me.id)
+    print("BOT USERNAME:", me.username)
+
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
