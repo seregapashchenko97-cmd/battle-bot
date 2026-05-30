@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
