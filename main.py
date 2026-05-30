@@ -11,7 +11,7 @@ from urllib3.util.retry import Retry
 
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import (
-    ImageClip, AudioFileClip, CompositeVideoClip,
+    ImageClip, CompositeVideoClip,
     concatenate_videoclips, VideoFileClip
 )
 from moviepy.audio.AudioClip import AudioArrayClip
@@ -24,7 +24,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     CallbackQuery,
-    BufferedInputFile,
     FSInputFile
 )
 
@@ -34,8 +33,8 @@ bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 FONT_PATH = "Anton-Regular.ttf"
-CLIP_DURATION = 5  # секунд на каждый батл
-FPS = 30
+CLIP_DURATION = 5
+FPS = 24
 
 keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -112,14 +111,9 @@ def fit_image(im: Image.Image, w: int, h: int) -> Image.Image:
     return bg
 
 
-def build_card(left_label: str, right_label: str,
-               left_img: Image.Image, right_img: Image.Image,
-               countdown: int = None) -> np.ndarray:
-    """
-    left_label  — верхняя картинка, её название рисуем СНИЗУ (над VS)
-    right_label — нижняя картинка, её название рисуем СВЕРХУ (под VS)
-    countdown   — цифра таймера (5,4,3,2,1) или None
-    """
+def build_frame(left_label: str, right_label: str,
+                left_img: Image.Image, right_img: Image.Image,
+                countdown: int = None) -> np.ndarray:
     W, H = 1080, 1920
     HALF = H // 2
 
@@ -127,43 +121,36 @@ def build_card(left_label: str, right_label: str,
     card.paste(fit_image(left_img, W, HALF), (0, 0))
     card.paste(fit_image(right_img, W, HALF), (0, HALF))
 
-    # Оверлеи
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ov = ImageDraw.Draw(overlay)
-    # Полоса вокруг VS
     ov.rectangle([0, HALF - 160, W, HALF + 160], fill=(0, 0, 0, 220))
     card = Image.alpha_composite(card.convert("RGBA"), overlay).convert("RGB")
 
     draw = ImageDraw.Draw(card)
 
     try:
-        font_vs     = ImageFont.truetype(FONT_PATH, 150)
-        font_label  = ImageFont.truetype(FONT_PATH, 72)
-        font_timer  = ImageFont.truetype(FONT_PATH, 200)
+        font_vs    = ImageFont.truetype(FONT_PATH, 150)
+        font_label = ImageFont.truetype(FONT_PATH, 72)
+        font_timer = ImageFont.truetype(FONT_PATH, 200)
     except Exception:
         font_vs    = ImageFont.load_default()
         font_label = ImageFont.load_default()
         font_timer = ImageFont.load_default()
 
-    # Красная разделительная линия
     draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=6)
 
-    # VS по центру
     draw.text((W // 2, HALF), "VS", font=font_vs,
               fill=(220, 30, 30), anchor="mm",
               stroke_width=5, stroke_fill=(0, 0, 0))
 
-    # Название верхней картинки — СНИЗУ над VS (слева от VS)
     draw.text((W // 2, HALF - 130), left_label.upper(), font=font_label,
               fill=(255, 255, 255), anchor="mb",
               stroke_width=3, stroke_fill=(0, 0, 0))
 
-    # Название нижней картинки — СВЕРХУ под VS (справа от VS)
     draw.text((W // 2, HALF + 130), right_label.upper(), font=font_label,
               fill=(255, 255, 255), anchor="mt",
               stroke_width=3, stroke_fill=(0, 0, 0))
 
-    # Таймер — в правом нижнем углу
     if countdown is not None:
         draw.text((W - 60, H - 60), str(countdown), font=font_timer,
                   fill=(255, 50, 50), anchor="rb",
@@ -173,56 +160,58 @@ def build_card(left_label: str, right_label: str,
 
 
 def make_beep(duration=0.12, freq=880, sr=44100) -> np.ndarray:
-    """Короткий бип для таймера."""
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     wave = 0.4 * np.sin(2 * np.pi * freq * t)
-    # fade out
     fade = np.linspace(1, 0, len(wave))
-    wave = wave * fade
-    stereo = np.stack([wave, wave], axis=1).astype(np.float32)
-    return stereo
+    wave = (wave * fade).astype(np.float32)
+    silence = np.zeros(sr - len(wave), dtype=np.float32)
+    chunk = np.concatenate([wave, silence])
+    return np.stack([chunk, chunk], axis=1)
 
 
 def build_battle_clip(left_label: str, right_label: str,
                       left_img: Image.Image, right_img: Image.Image,
-                      tmp_dir: str) -> str:
-    """Собирает 5-секундный клип одного батла с таймером и бипами."""
+                      tmp_dir: str, index: int) -> str:
     sr = 44100
-    frames_per_sec = FPS
     clips = []
     audio_chunks = []
 
     for sec in range(CLIP_DURATION, 0, -1):
-        frame = build_card(left_label, right_label, left_img, right_img, countdown=sec)
+        frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
         clip = ImageClip(frame, duration=1).set_fps(FPS)
         clips.append(clip)
-
-        # Бип в начале каждой секунды
-        beep = make_beep(freq=880 if sec > 1 else 1200)
-        silence_len = sr - len(beep)
-        silence = np.zeros((silence_len, 2), dtype=np.float32)
-        chunk = np.concatenate([beep, silence], axis=0)
-        audio_chunks.append(chunk)
+        freq = 1200 if sec == 1 else 880
+        audio_chunks.append(make_beep(freq=freq, sr=sr))
 
     video = concatenate_videoclips(clips, method="compose")
-
     audio_data = np.concatenate(audio_chunks, axis=0)
     audio_clip = AudioArrayClip(audio_data, fps=sr)
     video = video.set_audio(audio_clip)
 
-    out_path = os.path.join(tmp_dir, f"battle_{left_label}_{right_label}.mp4")
-    video.write_videofile(out_path, fps=FPS, codec="libx264",
-                          audio_codec="aac", logger=None)
+    out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
+    video.write_videofile(
+        out_path,
+        fps=FPS,
+        codec="mpeg4",
+        audio_codec="aac",
+        ffmpeg_params=["-q:v", "5"],
+        logger=None
+    )
     return out_path
 
 
 def concat_clips(clip_paths: list, tmp_dir: str) -> str:
-    """Склеивает все клипы в итоговое 25-сек видео."""
     clips = [VideoFileClip(p) for p in clip_paths]
     final = concatenate_videoclips(clips, method="compose")
     out_path = os.path.join(tmp_dir, "final_vs.mp4")
-    final.write_videofile(out_path, fps=FPS, codec="libx264",
-                          audio_codec="aac", logger=None)
+    final.write_videofile(
+        out_path,
+        fps=FPS,
+        codec="mpeg4",
+        audio_codec="aac",
+        ffmpeg_params=["-q:v", "5"],
+        logger=None
+    )
     for c in clips:
         c.close()
     return out_path
@@ -295,10 +284,10 @@ async def generate_video(message: Message):
 
     if user_id not in user_choices or len(user_choices[user_id]) < 5:
         count = len(user_choices.get(user_id, []))
-        await message.answer(f"Нужно выбрать 5 карточек. Сейчас выбрано: {count}/5")
+        await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
         return
 
-    await message.answer("🎬 Генерирую изображения и видео...\n⏳ Это займёт 2-4 минуты, подожди!")
+    await message.answer("🎬 Генерирую изображения и видео...\n⏳ Подожди 3-5 минут!")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -314,7 +303,7 @@ async def generate_video(message: Message):
                 clip_path = build_battle_clip(
                     left_label, right_label,
                     left_img, right_img,
-                    tmp_dir
+                    tmp_dir, idx
                 )
                 clip_paths.append(clip_path)
 
