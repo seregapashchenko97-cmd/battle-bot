@@ -11,8 +11,9 @@ from urllib3.util.retry import Retry
 
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import (
-    ImageClip, CompositeVideoClip,
-    concatenate_videoclips, VideoFileClip
+    ImageClip,
+    concatenate_videoclips,
+    VideoFileClip
 )
 from moviepy.audio.AudioClip import AudioArrayClip
 from aiogram import Bot, Dispatcher, F
@@ -27,7 +28,10 @@ from aiogram.types import (
     FSInputFile
 )
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+
+HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -45,26 +49,26 @@ keyboard = ReplyKeyboardMarkup(
 )
 
 VS_POOL = [
-    "❤️ Love VS 💰 Money",
-    "🍔 Burger VS 🍕 Pizza",
-    "🐶 Dog VS 🐱 Cat",
-    "🏝 Beach VS ⛰ Mountains",
-    "✈️ Travel VS 🏠 Home",
-    "🎮 PlayStation VS 🖥 PC",
-    "☕ Coffee VS 🍵 Tea",
-    "🚗 BMW VS Mercedes",
-    "🎤 Fame VS 😌 Peace",
-    "📱 iPhone VS Android",
-    "💪 Sports VS 🎮 Gaming",
-    "🌙 Night VS ☀️ Day",
-    "🎬 Cinema VS 📚 Books",
-    "⚽ Football VS 🏀 Basketball",
-    "🏖 Vacation VS 💼 Career",
-    "💎 Wealth VS ❤️ Love",
-    "🚀 Mars VS 🌍 Earth",
-    "🦁 Lion VS 🐺 Wolf",
-    "🏎 Ferrari VS Lamborghini",
-    "🎸 Rock VS 🎹 Classical"
+    "Love VS Money",
+    "Burger VS Pizza",
+    "Dog VS Cat",
+    "Beach VS Mountains",
+    "Travel VS Home",
+    "PlayStation VS PC",
+    "Coffee VS Tea",
+    "BMW VS Mercedes",
+    "Fame VS Peace",
+    "iPhone VS Android",
+    "Sports VS Gaming",
+    "Night VS Day",
+    "Cinema VS Books",
+    "Football VS Basketball",
+    "Vacation VS Career",
+    "Wealth VS Love",
+    "Mars VS Earth",
+    "Lion VS Wolf",
+    "Ferrari VS Lamborghini",
+    "Rock VS Classical"
 ]
 
 user_choices = {}
@@ -79,24 +83,25 @@ def get_session() -> requests.Session:
     return session
 
 
-def strip_emoji(text: str) -> str:
-    return re.sub(r'[^\w\s\-A-Za-z0-9]', '', text).strip()
-
-
 def parse_vs(variant: str):
     parts = variant.split(" VS ")
     if len(parts) == 2:
-        return strip_emoji(parts[0]).strip(), strip_emoji(parts[1]).strip()
+        return parts[0].strip(), parts[1].strip()
     return "Left", "Right"
 
 
-def generate_image_pollinations(prompt: str) -> Image.Image:
-    safe_prompt = requests.utils.quote(
-        f"{prompt}, cinematic, dramatic lighting, dark background, high quality, no text, no watermark"
-    )
-    url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1080&height=960&nologo=true&model=flux"
+def generate_image_hf(prompt: str) -> Image.Image:
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {
+        "inputs": f"{prompt}, cinematic photo, dramatic lighting, dark background, high quality, no text",
+        "parameters": {
+            "width": 1080,
+            "height": 960,
+            "num_inference_steps": 25,
+        }
+    }
     session = get_session()
-    response = session.get(url, timeout=120)
+    response = session.post(HF_API_URL, headers=headers, json=payload, timeout=120)
     response.raise_for_status()
     return Image.open(io.BytesIO(response.content)).convert("RGB")
 
@@ -287,7 +292,7 @@ async def generate_video(message: Message):
         await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
         return
 
-    await message.answer("🎬 Генерирую изображения и видео...\n⏳ Подожди 3-5 минут!")
+    await message.answer("🎬 Генерирую изображения и видео...\n⏳ Подожди 2-3 минуты!")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -297,8 +302,8 @@ async def generate_video(message: Message):
                 left_label, right_label = parse_vs(variant)
                 await message.answer(f"🖼 Батл {idx}/5: {left_label} VS {right_label}")
 
-                left_img = generate_image_pollinations(left_label)
-                right_img = generate_image_pollinations(right_label)
+                left_img = generate_image_hf(left_label)
+                right_img = generate_image_hf(right_label)
 
                 clip_path = build_battle_clip(
                     left_label, right_label,
