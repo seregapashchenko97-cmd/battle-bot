@@ -1,69 +1,119 @@
 import asyncio
-import os
-import google.generativeai as genai
+import random
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
-    KeyboardButton
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery
 )
- 
+
 BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
-GEMINI_API_KEY = "AQ.Ab8RN6LR4OekPY9fbtChzKj3GdL-98wUvUHlJTzpHbCSYWNpLg"
- 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
- 
+
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
- 
+
 keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🎲 Генерация вариантов")]
     ],
     resize_keyboard=True
 )
- 
+
+VS_POOL = [
+    "❤️ Любовь VS 💰 Деньги",
+    "🍔 Бургер VS 🍕 Пицца",
+    "🐶 Собака VS 🐱 Кот",
+    "🏝 Море VS ⛰ Горы",
+    "✈️ Путешествие VS 🏠 Дом мечты",
+    "🎮 PlayStation VS 🖥 ПК",
+    "☕ Кофе VS 🍵 Чай",
+    "🚗 BMW VS Mercedes",
+    "🎤 Слава VS 😌 Спокойствие",
+    "📱 iPhone VS Android",
+    "💪 Спорт VS 🎮 Игры",
+    "🌙 Ночь VS ☀️ День",
+    "🎬 Кино VS 📚 Книга",
+    "⚽ Футбол VS 🏀 Баскетбол",
+    "🏖 Отдых VS 💼 Карьера",
+    "💎 Богатство VS ❤️ Любовь",
+    "🚀 Марс VS 🌍 Земля",
+    "🦁 Лев VS 🐺 Волк",
+    "🏎 Ferrari VS Lamborghini",
+    "🎸 Рок VS 🎹 Классика"
+]
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
         "🎲 Генератор VS запущен",
         reply_markup=keyboard
     )
- 
+
+
 @dp.message(F.text == "🎲 Генерация вариантов")
 async def generate(message: Message):
-    await message.answer("⏳ Генерирую варианты...")
-    prompt = """
-Придумай 5 вирусных сравнений для формата VS.
-Примеры:
-Любовь VS Деньги
-Бургер VS Билет на концерт
-Собака VS Кот
- 
-Требования:
-* Ровно 5 вариантов
-* Каждый вариант с новой строки
-* Без нумерации
-* Короткие и понятные темы
-* Темы должны быть разными
-* Формат строго: X VS Y
-    """
-    try:
-        response = model.generate_content(prompt)
-        await message.answer(
-            "🔥 Варианты:\n\n" + response.text
+    variants = random.sample(VS_POOL, 5)
+
+    for i, variant in enumerate(variants, start=1):
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Использовать",
+                        callback_data=f"use_{i}"
+                    ),
+                    InlineKeyboardButton(
+                        text="🔄 Заменить",
+                        callback_data=f"replace_{i}"
+                    )
+                ]
+            ]
         )
-    except Exception as e:
+
         await message.answer(
-            f"❌ Ошибка Gemini:\n{e}"
+            f"Вариант {i}\n\n{variant}",
+            reply_markup=kb
         )
- 
+
+
+@dp.callback_query(F.data.startswith("use_"))
+async def use_variant(callback: CallbackQuery):
+    await callback.answer("Выбрано ✅")
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@dp.callback_query(F.data.startswith("replace_"))
+async def replace_variant(callback: CallbackQuery):
+    new_variant = random.choice(VS_POOL)
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Использовать",
+                    callback_data=callback.data.replace("replace", "use")
+                ),
+                InlineKeyboardButton(
+                    text="🔄 Заменить",
+                    callback_data=callback.data
+                )
+            ]
+        ]
+    )
+
+    await callback.message.edit_text(new_variant, reply_markup=kb)
+    await callback.answer()
+
+
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
- 
+
+
 if __name__ == "__main__":
     asyncio.run(main())
- 
