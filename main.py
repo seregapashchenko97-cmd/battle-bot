@@ -5,16 +5,13 @@ import os
 import re
 import requests
 import tempfile
+import subprocess
 import numpy as np
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import (
-    ImageClip,
-    concatenate_videoclips,
-    VideoFileClip
-)
+from moviepy.editor import ImageClip, concatenate_videoclips
 from moviepy.audio.AudioClip import AudioArrayClip
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -69,7 +66,6 @@ VS_POOL = [
     "Rock VS Classical"
 ]
 
-# Маппинг сложных слов на простые запросы для Unsplash
 QUERY_MAP = {
     "Wealth": "money gold luxury",
     "Peace": "nature calm zen",
@@ -108,45 +104,31 @@ def parse_vs(variant: str):
 def fetch_unsplash_image(query: str) -> Image.Image:
     session = get_session()
     headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
-
-    # Используем маппинг если есть
     search_query = QUERY_MAP.get(query, query)
 
-    # Попытка 1 — с маппингом
-    try:
-        url = "https://api.unsplash.com/photos/random"
-        params = {"query": search_query, "orientation": "landscape"}
-        response = session.get(url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        img_url = response.json()["urls"]["regular"]
-        img_resp = session.get(img_url, timeout=30)
-        img_resp.raise_for_status()
-        return Image.open(io.BytesIO(img_resp.content)).convert("RGB")
-    except Exception:
-        pass
+    for q in [search_query, query.split()[0], "nature"]:
+        try:
+            response = session.get(
+                "https://api.unsplash.com/photos/random",
+                params={"query": q, "orientation": "landscape"},
+                headers=headers, timeout=30
+            )
+            response.raise_for_status()
+            img_url = response.json()["urls"]["regular"]
+            img_resp = session.get(img_url, timeout=30)
+            img_resp.raise_for_status()
+            return Image.open(io.BytesIO(img_resp.content)).convert("RGB")
+        except Exception:
+            continue
 
-    # Попытка 2 — просто первое слово
-    try:
-        simple = query.split()[0]
-        params = {"query": simple, "orientation": "landscape"}
-        response = session.get(url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        img_url = response.json()["urls"]["regular"]
-        img_resp = session.get(img_url, timeout=30)
-        img_resp.raise_for_status()
-        return Image.open(io.BytesIO(img_resp.content)).convert("RGB")
-    except Exception:
-        pass
-
-    # Fallback — тёмная заглушка
+    # Тёмная заглушка
     img = Image.new("RGB", (1080, 960), (20, 20, 20))
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype(FONT_PATH, 80)
     except Exception:
         font = ImageFont.load_default()
-    draw.text((540, 480), query.upper(), font=font,
-              fill=(100, 100, 100), anchor="mm")
+    draw.text((540, 480), query.upper(), font=font, fill=(100, 100, 100), anchor="mm")
     return img
 
 
@@ -187,23 +169,16 @@ def build_frame(left_label: str, right_label: str,
         font_timer = ImageFont.load_default()
 
     draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=6)
-
-    draw.text((W // 2, HALF), "VS", font=font_vs,
-              fill=(220, 30, 30), anchor="mm",
+    draw.text((W // 2, HALF), "VS", font=font_vs, fill=(220, 30, 30), anchor="mm",
               stroke_width=5, stroke_fill=(0, 0, 0))
-
     draw.text((W // 2, HALF - 130), left_label.upper(), font=font_label,
-              fill=(255, 255, 255), anchor="mb",
-              stroke_width=3, stroke_fill=(0, 0, 0))
-
+              fill=(255, 255, 255), anchor="mb", stroke_width=3, stroke_fill=(0, 0, 0))
     draw.text((W // 2, HALF + 130), right_label.upper(), font=font_label,
-              fill=(255, 255, 255), anchor="mt",
-              stroke_width=3, stroke_fill=(0, 0, 0))
+              fill=(255, 255, 255), anchor="mt", stroke_width=3, stroke_fill=(0, 0, 0))
 
     if countdown is not None:
         draw.text((W - 60, H - 60), str(countdown), font=font_timer,
-                  fill=(255, 50, 50), anchor="rb",
-                  stroke_width=8, stroke_fill=(0, 0, 0))
+                  fill=(255, 50, 50), anchor="rb", stroke_width=8, stroke_fill=(0, 0, 0))
 
     return np.array(card)
 
@@ -214,8 +189,7 @@ def make_beep(duration=0.12, freq=880, sr=44100) -> np.ndarray:
     fade = np.linspace(1, 0, len(wave))
     wave = (wave * fade).astype(np.float32)
     silence = np.zeros(sr - len(wave), dtype=np.float32)
-    chunk = np.concatenate([wave, silence])
-    return np.stack([chunk, chunk], axis=1)
+    return np.stack([np.concatenate([wave, silence])] * 2, axis=1)
 
 
 def build_battle_clip(left_label: str, right_label: str,
@@ -227,14 +201,11 @@ def build_battle_clip(left_label: str, right_label: str,
 
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
-        clip = ImageClip(frame, duration=1).set_fps(FPS)
-        clips.append(clip)
-        freq = 1200 if sec == 1 else 880
-        audio_chunks.append(make_beep(freq=freq, sr=sr))
+        clips.append(ImageClip(frame, duration=1).set_fps(FPS))
+        audio_chunks.append(make_beep(freq=1200 if sec == 1 else 880, sr=sr))
 
     video = concatenate_videoclips(clips, method="compose")
-    audio_data = np.concatenate(audio_chunks, axis=0)
-    audio_clip = AudioArrayClip(audio_data, fps=sr)
+    audio_clip = AudioArrayClip(np.concatenate(audio_chunks, axis=0), fps=sr)
     video = video.set_audio(audio_clip)
 
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
@@ -243,20 +214,26 @@ def build_battle_clip(left_label: str, right_label: str,
         audio_codec="aac", ffmpeg_params=["-q:v", "5"],
         logger=None
     )
+    video.close()
     return out_path
 
 
-def concat_clips(clip_paths: list, tmp_dir: str) -> str:
-    clips = [VideoFileClip(p) for p in clip_paths]
-    final = concatenate_videoclips(clips, method="compose")
+def concat_with_ffmpeg(clip_paths: list, tmp_dir: str) -> str:
+    """Склейка через ffmpeg напрямую — быстро и без лишней памяти."""
+    list_file = os.path.join(tmp_dir, "clips.txt")
+    with open(list_file, "w") as f:
+        for p in clip_paths:
+            f.write(f"file '{p}'\n")
+
     out_path = os.path.join(tmp_dir, "final_vs.mp4")
-    final.write_videofile(
-        out_path, fps=FPS, codec="mpeg4",
-        audio_codec="aac", ffmpeg_params=["-q:v", "5"],
-        logger=None
-    )
-    for c in clips:
-        c.close()
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", list_file,
+        "-c", "copy",
+        out_path
+    ], check=True, capture_output=True)
     return out_path
 
 
@@ -330,7 +307,7 @@ async def generate_video(message: Message):
         await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
         return
 
-    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 1-2 минуты!")
+    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 2-3 минуты!")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -351,7 +328,7 @@ async def generate_video(message: Message):
                 clip_paths.append(clip_path)
 
             await message.answer("🎞 Склеиваю финальное видео...")
-            final_path = concat_clips(clip_paths, tmp_dir)
+            final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
 
             await message.answer_video(
                 FSInputFile(final_path, filename="vs_battle.mp4"),
