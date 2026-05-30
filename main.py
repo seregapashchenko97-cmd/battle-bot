@@ -13,7 +13,7 @@ BOT_TOKEN = "8330007893:AAGBWfwgoF3dxVJvBQTEADQnK-kCQRz40BE"
 GEMINI_API_KEY = "AQ.Ab8RN6Lb9ggtfZD1T6vKrmxXhYZ1QtjNPa427Fx_VScy9pcrhw"
  
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.0-flash")
  
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
