@@ -36,7 +36,7 @@ dp = Dispatcher()
 FONT_PATH = "Anton-Regular.ttf"
 CLIP_DURATION = 5
 FPS = 24
-W, H = 1080, 1920
+W, H = 720, 1280
 
 keyboard = ReplyKeyboardMarkup(
     keyboard=[
