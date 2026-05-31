@@ -318,12 +318,23 @@ async def generate(message: Message):
 async def use_variant(callback: CallbackQuery):
     user_id = callback.from_user.id
     number = callback.data.split("_")[1]
+
+    if user_id not in variant_storage or number not in variant_storage.get(user_id, {}):
+        await callback.answer("Устарело, генерируй заново")
+        return
+
     variant = variant_storage[user_id][number]
     if variant not in user_choices[user_id]:
         user_choices[user_id].append(variant)
+
     count = len(user_choices[user_id])
     await callback.answer(f"Выбрано {count}/5")
-    await callback.message.edit_reply_markup(reply_markup=None)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
     if count == 5:
         result = "✅ Выбрано 5 карточек\n\n"
         for i, item in enumerate(user_choices[user_id], start=1):
