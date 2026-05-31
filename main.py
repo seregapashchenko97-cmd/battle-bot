@@ -257,13 +257,13 @@ def build_frame(left_label, right_label, left_img, right_img,
 
     # Призыв к действию
     if not show_result:
-        # Лайк для верхней
-        draw.text((W//2, 40), "👍 LIKE", font=font_cta,
-                  fill=(255, 255, 100), anchor="mt",
+        # Лайк для верхней — правый верхний угол
+        draw.text((W - 20, 20), "LIKE", font=font_cta,
+                  fill=(255, 255, 100), anchor="rt",
                   stroke_width=2, stroke_fill=(0, 0, 0))
-        # Комент для нижней
-        draw.text((W//2, H - 40), "💬 COMMENT", font=font_cta,
-                  fill=(255, 255, 100), anchor="mb",
+        # Комент для нижней — правый нижний угол
+        draw.text((W - 20, H - 20), "COMMENT", font=font_cta,
+                  fill=(255, 255, 100), anchor="rb",
                   stroke_width=2, stroke_fill=(0, 0, 0))
 
     # Таймер — левый верхний угол
