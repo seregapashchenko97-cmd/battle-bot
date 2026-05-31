@@ -674,10 +674,7 @@ async def publish_schedule(callback: CallbackQuery):
         ]
     ])
     await callback.message.answer(
-        "⏰ Выбери время публикации (EST — США):
-
-"
-        "Лучшее время для американской аудитории: 3:00 PM или 6:00 PM EST",
+        "⏰ Выбери время публикации (EST — США):\n\nЛучшее время для американской аудитории: 3:00 PM или 6:00 PM EST",
         reply_markup=kb
     )
 
