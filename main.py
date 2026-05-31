@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 from aiogram.client.default import DefaultBotProperties
 bot = Bot(BOT_TOKEN, request_timeout=120)
@@ -128,6 +128,7 @@ QUERY_MAP = {
 
 user_choices = {}
 variant_storage = {}
+used_variants = {}  # отслеживаем использованные темы
 
 
 def get_session():
@@ -143,25 +144,37 @@ def parse_vs(variant):
 
 
 def fetch_image(query):
-    import urllib.request, json, base64
-    logger.info(f"Generating image for: {query}")
-    prompt = f"Cinematic dramatic photo of {query}, dark moody atmosphere, professional photography, no text, no watermark, hyperrealistic"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key={GEMINI_API_KEY}"
-    data = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
-    }).encode()
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read())
-            for part in result["candidates"][0]["content"]["parts"]:
-                if "inlineData" in part:
-                    img_bytes = base64.b64decode(part["inlineData"]["data"])
-                    logger.info(f"Image generated for: {query}")
-                    return Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    except Exception as e:
-        logger.warning(f"Gemini failed for {query}: {e}")
+    logger.info(f"Fetching image for: {query}")
+    session = get_session()
+    headers = {
+        "Authorization": PEXELS_API_KEY
+    }
+    # Используем маппинг для лучших результатов
+    search_query = QUERY_MAP.get(query, query)
+    
+    for q in [search_query, query.split()[0], "dark dramatic"]:
+        try:
+            r = session.get(
+                "https://api.pexels.com/v1/search",
+                params={"query": q, "per_page": 15, "orientation": "landscape"},
+                headers=headers,
+                timeout=20
+            )
+            r.raise_for_status()
+            photos = r.json().get("photos", [])
+            if photos:
+                # Берём случайное фото из результатов
+                photo = random.choice(photos)
+                img_url = photo["src"]["large"]
+                img_r = session.get(img_url, timeout=20)
+                img_r.raise_for_status()
+                logger.info(f"Image fetched for: {query}")
+                return Image.open(io.BytesIO(img_r.content)).convert("RGB")
+        except Exception as e:
+            logger.warning(f"Pexels failed for '{q}': {e}")
+            continue
+    
+    # Тёмная заглушка
     img = Image.new("RGB", (W, H // 2), (20, 20, 20))
     draw = ImageDraw.Draw(img)
     try:
@@ -280,17 +293,55 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
     return out_path
 
 
+def download_music(tmp_dir):
+    """Скачиваем бесплатный драматичный трек."""
+    music_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+    music_path = os.path.join(tmp_dir, "music.mp3")
+    try:
+        session = get_session()
+        r = session.get(music_url, timeout=30)
+        r.raise_for_status()
+        with open(music_path, "wb") as f:
+            f.write(r.content)
+        return music_path
+    except Exception as e:
+        logger.warning(f"Music download failed: {e}")
+        return None
+
+
 def concat_with_ffmpeg(clip_paths, tmp_dir):
     logger.info("Concatenating clips")
     list_file = os.path.join(tmp_dir, "clips.txt")
     with open(list_file, "w") as f:
         for p in clip_paths:
             f.write(f"file '{p}'\n")
-    out_path = os.path.join(tmp_dir, "final_vs.mp4")
+
+    merged_path = os.path.join(tmp_dir, "merged.mp4")
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", list_file, "-c", "copy", out_path
+        "-i", list_file, "-c", "copy", merged_path
     ], check=True, capture_output=True)
+
+    # Добавляем музыку
+    music_path = download_music(tmp_dir)
+    out_path = os.path.join(tmp_dir, "final_vs.mp4")
+
+    if music_path:
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", merged_path,
+            "-i", music_path,
+            "-filter_complex", "[1:a]volume=0.3[music];[0:a][music]amix=inputs=2:duration=first[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            out_path
+        ], check=True, capture_output=True)
+    else:
+        os.rename(merged_path, out_path)
+
     logger.info("Concat done")
     return out_path
 
@@ -304,8 +355,20 @@ async def start(message: Message):
 async def generate(message: Message):
     user_id = message.from_user.id
     user_choices[user_id] = []
-    variants = random.sample(VS_POOL, 5)
     variant_storage[user_id] = {}
+
+    # Избегаем повторов — исключаем уже использованные темы
+    if user_id not in used_variants:
+        used_variants[user_id] = set()
+
+    available = [v for v in VS_POOL if v not in used_variants[user_id]]
+    if len(available) < 5:
+        used_variants[user_id] = set()  # сбрасываем если закончились
+        available = VS_POOL.copy()
+
+    variants = random.sample(available, 5)
+    for v in variants:
+        used_variants[user_id].add(v)
     for i, variant in enumerate(variants, start=1):
         variant_storage[user_id][str(i)] = variant
         kb = InlineKeyboardMarkup(inline_keyboard=[[
