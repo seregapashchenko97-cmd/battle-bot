@@ -36,6 +36,7 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
@@ -341,7 +342,8 @@ def upload_to_youtube(video_path, title, description):
         "snippet": {
             "title": title, "description": description,
             "tags": ["shorts", "vs", "battle", "wouldyourather", "viral", "battlevote"],
-            "categoryId": "22"
+            "categoryId": "22",
+            "channelId": YOUTUBE_CHANNEL_ID
         },
         "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
     }
