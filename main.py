@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -141,26 +141,33 @@ def parse_vs(variant):
     return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else ("Left", "Right")
 
 
-def fetch_unsplash_image(query):
-    logger.info(f"Fetching image for: {query}")
-    session = get_session()
-    headers = {"Authorization": f"Client-ID {UNSPLASH_KEY}"}
-    for q in [QUERY_MAP.get(query, query), query.split()[0], "nature"]:
-        try:
-            r = session.get("https://api.unsplash.com/photos/random",
-                           params={"query": q, "orientation": "landscape"},
-                           headers=headers, timeout=20)
-            r.raise_for_status()
-            img_url = r.json()["urls"]["small"]  # small вместо regular — быстрее
-            img_r = session.get(img_url, timeout=20)
-            img_r.raise_for_status()
-            logger.info(f"Image fetched for: {query}")
-            return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-        except Exception as e:
-            logger.warning(f"Failed query '{q}': {e}")
-            continue
-    logger.info(f"Using fallback for: {query}")
+def fetch_image(query):
+    import urllib.request, json, base64
+    logger.info(f"Generating image for: {query}")
+    prompt = f"Cinematic dramatic photo of {query}, dark moody atmosphere, professional photography, no text, no watermark, hyperrealistic"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key={GEMINI_API_KEY}"
+    data = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
+    }).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())
+            for part in result["candidates"][0]["content"]["parts"]:
+                if "inlineData" in part:
+                    img_bytes = base64.b64decode(part["inlineData"]["data"])
+                    logger.info(f"Image generated for: {query}")
+                    return Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    except Exception as e:
+        logger.warning(f"Gemini failed for {query}: {e}")
     img = Image.new("RGB", (W, H // 2), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(FONT_PATH, 60)
+    except Exception:
+        font = ImageFont.load_default()
+    draw.text((W//2, H//4), query.upper(), font=font, fill=(80, 80, 80), anchor="mm")
     return img
 
 
@@ -355,8 +362,8 @@ async def generate_video(message: Message):
             for idx, variant in enumerate(user_choices[user_id], start=1):
                 left_label, right_label = parse_vs(variant)
                 await message.answer(f"🖼 Батл {idx}/5: {left_label} VS {right_label}")
-                left_img = fetch_unsplash_image(left_label)
-                right_img = fetch_unsplash_image(right_label)
+                left_img = fetch_image(left_label)
+                right_img = fetch_image(right_label)
                 clip_path = build_battle_clip(
                     left_label, right_label, left_img, right_img, tmp_dir, idx)
                 clip_paths.append(clip_path)
