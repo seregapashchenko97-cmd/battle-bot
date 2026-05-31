@@ -710,12 +710,7 @@ async def schedule_publish(callback: CallbackQuery):
     delay_mins = delay_minutes % 60
 
     await callback.message.answer(
-        f"⏰ Видео будет опубликовано в {hour_est}:00 EST
-"
-        f"Осталось: {delay_hours}ч {delay_mins}мин
-
-"
-        f"Не выключай бота!"
+        f"⏰ Видео будет опубликовано в {hour_est}:00 EST\nОсталось: {delay_hours}ч {delay_mins}мин\n\nНе выключай бота!"
     )
 
     # Ждём и публикуем
