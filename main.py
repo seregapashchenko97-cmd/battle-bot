@@ -11,6 +11,7 @@ import logging
 import json
 import urllib.request
 import urllib.parse
+import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -44,94 +45,65 @@ CLIP_DURATION = 5
 FPS = 20
 W, H = 720, 1280
 
+# Слоты публикации в EST (час)
+QUEUE_SLOTS = [9, 15, 21]
+
 keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🎲 Генерация вариантов")],
-        [KeyboardButton(text="🎨 Сгенерировать видео")]
+        [KeyboardButton(text="🎬 Собрать видео")],
+        [KeyboardButton(text="🎲 Выбрать темы вручную")]
     ],
     resize_keyboard=True
 )
 
 VS_POOL = [
-    "Money VS Love",
-    "Fame VS Happiness",
-    "Loyalty VS Ambition",
-    "Revenge VS Forgiveness",
-    "Power VS Freedom",
-    "Hustle VS Balance",
-    "Alpha VS Sigma",
-    "Truth VS Kindness",
-    "Passion VS Reason",
-    "Silence VS Reaction",
-    "Respected VS Loved",
-    "Rich Alone VS Poor Together",
-    "Short Pleasure VS Long Success",
-    "Fake Smile VS Real Pain",
-    "Hard Truth VS Sweet Lie",
-    "One Real Friend VS Thousand Fans",
-    "Safe Life VS Wild Life",
-    "Street Smart VS Book Smart",
-    "Work Hard VS Work Smart",
-    "Live Now VS Plan Forever",
-    "Ferrari VS Lamborghini",
-    "iPhone VS Android",
-    "Nike VS Adidas",
-    "Rolls Royce VS Bugatti",
-    "Las Vegas VS Dubai",
-    "Gym VS Couch",
-    "Billionaire VS Rock Star",
-    "Love At First Sight VS Deep Connection",
-    "Die Famous VS Live Unknown",
-    "Leader VS Lone Wolf",
+    "Money VS Love", "Fame VS Happiness", "Loyalty VS Ambition",
+    "Revenge VS Forgiveness", "Power VS Freedom", "Hustle VS Balance",
+    "Alpha VS Sigma", "Truth VS Kindness", "Passion VS Reason",
+    "Silence VS Reaction", "Respected VS Loved", "Rich Alone VS Poor Together",
+    "Short Pleasure VS Long Success", "Fake Smile VS Real Pain",
+    "Hard Truth VS Sweet Lie", "One Real Friend VS Thousand Fans",
+    "Safe Life VS Wild Life", "Street Smart VS Book Smart",
+    "Work Hard VS Work Smart", "Live Now VS Plan Forever",
+    "Ferrari VS Lamborghini", "iPhone VS Android", "Nike VS Adidas",
+    "Rolls Royce VS Bugatti", "Las Vegas VS Dubai", "Gym VS Couch",
+    "Billionaire VS Rock Star", "Love At First Sight VS Deep Connection",
+    "Die Famous VS Live Unknown", "Leader VS Lone Wolf",
 ]
 
 QUERY_MAP = {
-    "Money": "cash money luxury",
-    "Love": "couple romance",
-    "Fame": "spotlight celebrity crowd",
-    "Happiness": "smile joy celebration",
-    "Loyalty": "friendship trust handshake",
-    "Ambition": "success businessman skyscraper",
-    "Revenge": "dark storm angry",
-    "Forgiveness": "peace light calm",
-    "Power": "strength leader crowd",
-    "Freedom": "open road sky travel",
-    "Hustle": "work hard grind office",
-    "Balance": "yoga zen nature",
-    "Alpha": "confident leader strong",
-    "Sigma": "lone wolf solitary dark",
-    "Truth": "light clarity mirror",
-    "Kindness": "help charity hands",
-    "Passion": "fire energy dance",
-    "Reason": "chess logic science",
-    "Silence": "quiet empty room",
-    "Reaction": "crowd reaction surprise",
-    "Respected": "leader podium award",
-    "Loved": "couple hug family",
-    "Rich": "luxury mansion yacht",
-    "Poor": "friendship community together",
-    "Ferrari": "red ferrari sports car",
-    "Lamborghini": "lamborghini supercar",
-    "iPhone": "apple iphone smartphone",
-    "Android": "samsung android phone",
-    "Nike": "nike shoes sport",
-    "Adidas": "adidas sneakers",
-    "Rolls Royce": "rolls royce luxury car",
-    "Bugatti": "bugatti supercar",
-    "Las Vegas": "las vegas night lights",
-    "Dubai": "dubai skyline luxury",
-    "Gym": "gym workout fitness",
-    "Couch": "relax home sofa",
-    "Billionaire": "billionaire yacht mansion",
-    "Rock Star": "rock concert stage",
-    "Leader": "leadership team business",
-    "Lone Wolf": "alone dark forest",
+    "Money": "cash money luxury", "Love": "couple romance",
+    "Fame": "spotlight celebrity", "Happiness": "smile joy",
+    "Loyalty": "friendship trust", "Ambition": "success business",
+    "Revenge": "dark storm", "Forgiveness": "peace calm light",
+    "Power": "strength leader", "Freedom": "open road sky",
+    "Hustle": "work hard office", "Balance": "yoga zen nature",
+    "Alpha": "confident leader", "Sigma": "lone wolf solitary",
+    "Truth": "light clarity", "Kindness": "help charity",
+    "Passion": "fire energy", "Reason": "chess logic",
+    "Silence": "quiet empty", "Reaction": "crowd surprise",
+    "Respected": "leader award", "Loved": "couple family",
+    "Rich": "luxury mansion", "Poor": "community together",
+    "Ferrari": "red ferrari sports car", "Lamborghini": "lamborghini supercar",
+    "iPhone": "apple iphone", "Android": "samsung android",
+    "Nike": "nike shoes sport", "Adidas": "adidas sneakers",
+    "Rolls Royce": "rolls royce luxury", "Bugatti": "bugatti supercar",
+    "Las Vegas": "las vegas night", "Dubai": "dubai skyline",
+    "Gym": "gym workout fitness", "Couch": "relax home sofa",
+    "Billionaire": "billionaire yacht", "Rock Star": "rock concert stage",
+    "Leader": "leadership business", "Lone Wolf": "alone forest dark",
+    "Fake Smile": "smile mask fake", "Real Pain": "sad alone dark",
+    "Hard Truth": "truth mirror honest", "Sweet Lie": "lie sugar candy",
+    "Safe Life": "comfortable home safe", "Wild Life": "adventure extreme sport",
+    "Short Pleasure": "party fun night", "Long Success": "trophy winner success",
+    "Live Now": "party enjoy present", "Plan Forever": "calendar plan future",
+    "Die Famous": "celebrity spotlight famous", "Live Unknown": "alone quiet peaceful",
 }
 
-user_choices = {}
-variant_storage = {}
+# Хранилища
 used_variants = {}
-pending_videos = {}  # хранит пути к видео ожидающим публикации
+pending_videos = {}
+publish_queue = {}  # user_id -> список запланированных слотов
 
 
 def get_session():
@@ -147,69 +119,48 @@ def parse_vs(variant):
 
 
 def fetch_image(query):
-    logger.info(f"Fetching image for: {query}")
+    logger.info(f"Fetching: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
     search_query = QUERY_MAP.get(query, query)
-
-    for q in [search_query, query.split()[0], "dark dramatic"]:
+    for q in [search_query, query.split()[0], "dramatic dark"]:
         try:
-            r = session.get(
-                "https://api.pexels.com/v1/search",
-                params={"query": q, "per_page": 15, "orientation": "landscape"},
-                headers=headers, timeout=20
-            )
+            r = session.get("https://api.pexels.com/v1/search",
+                           params={"query": q, "per_page": 15, "orientation": "landscape"},
+                           headers=headers, timeout=20)
             r.raise_for_status()
             photos = r.json().get("photos", [])
             if photos:
-                photo = random.choice(photos)
-                img_url = photo["src"]["large"]
+                img_url = random.choice(photos)["src"]["large"]
                 img_r = session.get(img_url, timeout=20)
                 img_r.raise_for_status()
-                logger.info(f"Image fetched for: {query}")
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
-            logger.warning(f"Pexels failed for '{q}': {e}")
-            continue
-
-    img = Image.new("RGB", (W, H // 2), (20, 20, 20))
-    return img
+            logger.warning(f"Pexels failed '{q}': {e}")
+    return Image.new("RGB", (W, H // 2), (20, 20, 20))
 
 
 def fit_image(im, w, h):
     im = im.copy()
-    ratio_w = w / im.width
-    ratio_h = h / im.height
-    ratio = max(ratio_w, ratio_h)
-    new_w = int(im.width * ratio)
-    new_h = int(im.height * ratio)
+    ratio = max(w / im.width, h / im.height)
+    new_w, new_h = int(im.width * ratio), int(im.height * ratio)
     im = im.resize((new_w, new_h), Image.LANCZOS)
-    x = (new_w - w) // 2
-    y = (new_h - h) // 2
+    x, y = (new_w - w) // 2, (new_h - h) // 2
     return im.crop((x, y, x + w, y + h))
 
 
-def draw_emoji_text(draw, text, x, y, font, fill, anchor="mm", stroke_width=0, stroke_fill=None):
-    """Рисует текст с поддержкой базовых символов."""
-    draw.text((x, y), text, font=font, fill=fill, anchor=anchor,
-              stroke_width=stroke_width, stroke_fill=stroke_fill)
-
-
 def build_frame(left_label, right_label, left_img, right_img,
-                countdown=None, show_result=False,
-                left_pct=None, right_pct=None):
+                countdown=None, show_result=False, left_pct=None, right_pct=None):
     HALF = H // 2
     card = Image.new("RGB", (W, H), (0, 0, 0))
     card.paste(fit_image(left_img, W, HALF), (0, 0))
     card.paste(fit_image(right_img, W, HALF), (0, HALF))
 
-    # Оверлей вокруг VS зоны
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ov = ImageDraw.Draw(overlay)
     ov.rectangle([0, HALF - 130, W, HALF + 130], fill=(0, 0, 0, 210))
 
-    # Если результат — подсвечиваем победителя
-    if show_result and left_pct is not None and right_pct is not None:
+    if show_result and left_pct is not None:
         if left_pct >= right_pct:
             ov.rectangle([0, 0, W, HALF - 130], fill=(0, 180, 0, 60))
         else:
@@ -222,51 +173,40 @@ def build_frame(left_label, right_label, left_img, right_img,
         font_vs    = ImageFont.truetype(FONT_PATH, 100)
         font_label = ImageFont.truetype(FONT_PATH, 48)
         font_timer = ImageFont.truetype(FONT_PATH, 140)
-        font_pct   = ImageFont.truetype(FONT_PATH, 72)
-        font_cta   = ImageFont.truetype(FONT_PATH, 32)
-        font_icon  = ImageFont.truetype(FONT_PATH, 56)
+        font_pct   = ImageFont.truetype(FONT_PATH, 64)
+        font_cta   = ImageFont.truetype(FONT_PATH, 36)
     except Exception:
-        font_vs = font_label = font_timer = font_pct = font_cta = font_icon = ImageFont.load_default()
+        font_vs = font_label = font_timer = font_pct = font_cta = ImageFont.load_default()
 
-    # Красная линия
     draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=6)
-
-    # VS
     draw.text((W//2, HALF), "VS", font=font_vs, fill=(220, 30, 30), anchor="mm",
               stroke_width=4, stroke_fill=(0, 0, 0))
 
     if show_result and left_pct is not None:
-        # Показываем проценты
         left_color = (0, 220, 0) if left_pct >= right_pct else (255, 255, 255)
         right_color = (0, 220, 0) if right_pct > left_pct else (255, 255, 255)
-
-        draw.text((W//2, HALF - 80), f"{left_label.upper()}  {left_pct}%",
+        draw.text((W//2, HALF - 75), f"{left_label.upper()}  {left_pct}%",
                   font=font_pct, fill=left_color, anchor="mb",
                   stroke_width=3, stroke_fill=(0, 0, 0))
-        draw.text((W//2, HALF + 80), f"{right_pct}%  {right_label.upper()}",
+        draw.text((W//2, HALF + 75), f"{right_pct}%  {right_label.upper()}",
                   font=font_pct, fill=right_color, anchor="mt",
                   stroke_width=3, stroke_fill=(0, 0, 0))
     else:
-        # Обычные названия
-        draw.text((W//2, HALF - 80), left_label.upper(), font=font_label,
+        draw.text((W//2, HALF - 75), left_label.upper(), font=font_label,
                   fill=(255, 255, 255), anchor="mb",
                   stroke_width=3, stroke_fill=(0, 0, 0))
-        draw.text((W//2, HALF + 80), right_label.upper(), font=font_label,
+        draw.text((W//2, HALF + 75), right_label.upper(), font=font_label,
                   fill=(255, 255, 255), anchor="mt",
                   stroke_width=3, stroke_fill=(0, 0, 0))
 
-    # Призыв к действию
     if not show_result:
-        # Лайк — левый нижний угол верхней картинки
-        draw.text((20, HALF - 140), "[ LIKE ]", font=font_cta,
+        draw.text((20, HALF - 145), "[ LIKE ]", font=font_cta,
                   fill=(255, 255, 0), anchor="lt",
                   stroke_width=2, stroke_fill=(0, 0, 0))
-        # Комент — левый верхний угол нижней картинки
-        draw.text((20, HALF + 140), "[ COMMENT ]", font=font_cta,
+        draw.text((20, HALF + 145), "[ COMMENT ]", font=font_cta,
                   fill=(255, 255, 0), anchor="lb",
                   stroke_width=2, stroke_fill=(0, 0, 0))
 
-    # Таймер — левый верхний угол
     if countdown is not None and not show_result:
         draw.text((50, 50), str(countdown), font=font_timer,
                   fill=(255, 50, 50), anchor="lt",
@@ -280,42 +220,34 @@ def make_beep_pcm(freq=880, sr=44100, duration=0.12):
     wave = (0.4 * np.sin(2 * np.pi * freq * t) * np.linspace(1, 0, len(t))).astype(np.float32)
     silence = np.zeros(sr - len(wave), dtype=np.float32)
     mono = np.concatenate([wave, silence])
-    stereo = np.stack([mono, mono], axis=1)
-    return (stereo * 32767).astype(np.int16).tobytes()
+    return (np.stack([mono, mono], axis=1) * 32767).astype(np.int16).tobytes()
 
 
 def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, index):
-    logger.info(f"Building clip {index}: {left_label} VS {right_label}")
+    logger.info(f"Building clip {index}")
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
     audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
 
-    # Рандомные проценты
     left_pct = random.randint(30, 70)
     right_pct = 100 - left_pct
 
     frames_bytes = b""
     audio_bytes = b""
 
-    # 5 → 1 с таймером
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
-        frame_rgb = frame.tobytes()
         for _ in range(FPS):
-            frames_bytes += frame_rgb
-        freq = 1200 if sec == 1 else 880
-        audio_bytes += make_beep_pcm(freq=freq)
+            frames_bytes += frame.tobytes()
+        audio_bytes += make_beep_pcm(freq=1200 if sec == 1 else 880)
 
-    # 0 — результат (1 секунда)
+    # Результат — 0
     result_frame = build_frame(left_label, right_label, left_img, right_img,
                                countdown=0, show_result=True,
                                left_pct=left_pct, right_pct=right_pct)
-    result_rgb = result_frame.tobytes()
     for _ in range(FPS):
-        frames_bytes += result_rgb
-    # Финальный бип — высокий
+        frames_bytes += result_frame.tobytes()
     audio_bytes += make_beep_pcm(freq=1500, duration=0.3)
-    silence_len = 44100 - int(44100 * 0.3)
-    audio_bytes += (np.zeros(silence_len * 2, dtype=np.int16)).tobytes()
+    audio_bytes += (np.zeros((44100 - int(44100 * 0.3)) * 2, dtype=np.int16)).tobytes()
 
     with open(audio_path, "wb") as f:
         f.write(audio_bytes)
@@ -326,11 +258,9 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
         "-s", f"{W}x{H}", "-pix_fmt", "rgb24",
         "-r", str(FPS), "-i", "pipe:0",
         "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", audio_path,
-        "-vcodec", "mpeg4", "-q:v", "8",
-        "-acodec", "aac",
+        "-vcodec", "mpeg4", "-q:v", "8", "-acodec", "aac",
         "-shortest", out_path
     ]
-
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     proc.communicate(input=frames_bytes)
@@ -339,156 +269,206 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
 
 
 def download_music(tmp_dir):
-    music_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-    music_path = os.path.join(tmp_dir, "music.mp3")
     try:
-        session = get_session()
-        r = session.get(music_url, timeout=30)
+        r = get_session().get("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", timeout=30)
         r.raise_for_status()
-        with open(music_path, "wb") as f:
+        path = os.path.join(tmp_dir, "music.mp3")
+        with open(path, "wb") as f:
             f.write(r.content)
-        return music_path
+        return path
     except Exception as e:
-        logger.warning(f"Music download failed: {e}")
+        logger.warning(f"Music failed: {e}")
         return None
 
 
 def concat_with_ffmpeg(clip_paths, tmp_dir):
-    logger.info("Concatenating clips")
     list_file = os.path.join(tmp_dir, "clips.txt")
     with open(list_file, "w") as f:
         for p in clip_paths:
             f.write(f"file '{p}'\n")
 
-    merged_path = os.path.join(tmp_dir, "merged.mp4")
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", list_file, "-c", "copy", merged_path
-    ], check=True, capture_output=True)
+    merged = os.path.join(tmp_dir, "merged.mp4")
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", list_file, "-c", "copy", merged],
+                   check=True, capture_output=True)
 
-    music_path = download_music(tmp_dir)
-    out_path = os.path.join(tmp_dir, "final_vs.mp4")
+    music = download_music(tmp_dir)
+    out = os.path.join(tmp_dir, "final_vs.mp4")
 
-    if music_path:
+    if music:
         subprocess.run([
-            "ffmpeg", "-y",
-            "-i", merged_path,
-            "-i", music_path,
-            "-filter_complex", "[1:a]volume=0.25[music];[0:a][music]amix=inputs=2:duration=first[aout]",
-            "-map", "0:v",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-shortest", out_path
+            "ffmpeg", "-y", "-i", merged, "-i", music,
+            "-filter_complex", "[1:a]volume=0.25[m];[0:a][m]amix=inputs=2:duration=first[a]",
+            "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+            "-shortest", out
         ], check=True, capture_output=True)
     else:
-        os.rename(merged_path, out_path)
-
-    logger.info("Concat done")
-    return out_path
+        os.rename(merged, out)
+    return out
 
 
-def get_youtube_access_token():
-    """Получаем access token через refresh token."""
+def generate_metadata(variants):
+    title = f"{variants[0]} — Which Side Are You On? #shorts"
+    desc = "Every day we put two choices head-to-head — YOU decide the winner!\n\n"
+    desc += "Today's battles:\n"
+    for v in variants:
+        desc += f"* {v}\n"
+    desc += "\nLIKE for the top | COMMENT for the bottom\n"
+    desc += "Watch till the end to see results!\n\n"
+    desc += "Subscribe for daily battles @BattleVoteUSA\n\n"
+    desc += "#shorts #vs #battle #wouldyourather #pickone #chooseside #viral #battlevote"
+    return title, desc
+
+
+def get_youtube_token():
     data = urllib.parse.urlencode({
         "client_id": YOUTUBE_CLIENT_ID,
         "client_secret": YOUTUBE_CLIENT_SECRET,
         "refresh_token": YOUTUBE_REFRESH_TOKEN,
         "grant_type": "refresh_token"
     }).encode()
-
     req = urllib.request.Request(
-        "https://oauth2.googleapis.com/token",
-        data=data,
+        "https://oauth2.googleapis.com/token", data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-        return result["access_token"]
-
-
-def generate_video_metadata(variants):
-    """Генерируем название и описание для YouTube."""
-    topics = " | ".join([f"{v.split(' VS ')[0]} VS {v.split(' VS ')[1]}" for v in variants[:3]])
-    title = f"🔥 {variants[0]} — Which Side Are You On? #shorts"
-    description = f"""Every day we put two choices head-to-head — and YOU decide the winner!
-
-Today's battles:
-{chr(10).join([f'⚡ {v}' for v in variants])}
-
-👍 LIKE for the top option
-💬 COMMENT for the bottom option
-
-Watch till the end to see the results!
-
-🔔 Subscribe for daily battles → @BattleVoteUSA
-
-#shorts #vs #battle #wouldyourather #pickone #chooseside #viral #trending #battlevote #versus #dailybattle #pickside"""
-
-    return title, description
+        return json.loads(resp.read())["access_token"]
 
 
 def upload_to_youtube(video_path, title, description):
-    """Загружаем видео на YouTube."""
-    logger.info("Getting YouTube access token")
-    access_token = get_youtube_access_token()
-
-    # Метаданные видео
+    token = get_youtube_token()
     metadata = {
         "snippet": {
-            "title": title,
-            "description": description,
-            "tags": ["shorts", "vs", "battle", "wouldyourather", "pickone", "viral", "trending", "battlevote"],
+            "title": title, "description": description,
+            "tags": ["shorts", "vs", "battle", "wouldyourather", "viral", "battlevote"],
             "categoryId": "22"
         },
-        "status": {
-            "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False
-        }
+        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
     }
-
-    # Multipart upload
-    boundary = "batch_boundary_xyz"
-    metadata_json = json.dumps(metadata).encode()
+    boundary = "bv_boundary_xyz"
+    meta_bytes = json.dumps(metadata).encode()
     with open(video_path, "rb") as f:
-        video_data = f.read()
+        video_bytes = f.read()
 
     body = (
-        f"--{boundary}\r\n"
-        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-    ).encode() + metadata_json + (
-        f"\r\n--{boundary}\r\n"
-        f"Content-Type: video/mp4\r\n\r\n"
-    ).encode() + video_data + f"\r\n--{boundary}--".encode()
+        f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+    ).encode() + meta_bytes + (
+        f"\r\n--{boundary}\r\nContent-Type: video/mp4\r\n\r\n"
+    ).encode() + video_bytes + f"\r\n--{boundary}--".encode()
 
     req = urllib.request.Request(
         "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status",
         data=body,
         headers={
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": f"multipart/related; boundary={boundary}",
             "Content-Length": str(len(body))
         },
         method="POST"
     )
-
     with urllib.request.urlopen(req, timeout=300) as resp:
-        result = json.loads(resp.read())
-        video_id = result.get("id", "unknown")
-        logger.info(f"Uploaded to YouTube: {video_id}")
-        return f"https://www.youtube.com/shorts/{video_id}"
+        vid_id = json.loads(resp.read()).get("id", "unknown")
+        return f"https://www.youtube.com/shorts/{vid_id}"
+
+
+def get_next_slot(user_id):
+    """Находим следующий свободный слот по расписанию."""
+    now_utc = datetime.datetime.utcnow()
+    is_dst = 3 <= now_utc.month <= 11
+    utc_offset = 4 if is_dst else 5
+
+    if user_id not in publish_queue:
+        publish_queue[user_id] = []
+
+    # Убираем прошедшие слоты
+    publish_queue[user_id] = [s for s in publish_queue[user_id] if s["target_utc"] > now_utc]
+
+    busy = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == now_utc.date()]
+
+    # Ищем свободный слот сегодня
+    for slot in QUEUE_SLOTS:
+        if slot not in busy:
+            target_hour_utc = (slot + utc_offset) % 24
+            target = now_utc.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
+            if target > now_utc:
+                return slot, target, now_utc.date()
+
+    # Все сегодняшние заняты — берём завтра
+    tomorrow = now_utc.date() + datetime.timedelta(days=1)
+    busy_tomorrow = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == tomorrow]
+
+    for slot in QUEUE_SLOTS:
+        if slot not in busy_tomorrow:
+            target_hour_utc = (slot + utc_offset) % 24
+            target = datetime.datetime.combine(tomorrow, datetime.time(target_hour_utc, 0))
+            return slot, target, tomorrow
+
+    return QUEUE_SLOTS[0], now_utc + datetime.timedelta(days=2), now_utc.date() + datetime.timedelta(days=2)
+
+
+async def delayed_publish(user_id, slot_id, video_data, target_utc, message):
+    now_utc = datetime.datetime.utcnow()
+    delay = max(0, (target_utc - now_utc).total_seconds())
+    await asyncio.sleep(delay)
+    try:
+        url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
+        publish_queue[user_id] = [s for s in publish_queue.get(user_id, []) if s["id"] != slot_id]
+        await message.answer(f"Published! {url}")
+    except Exception as e:
+        logger.error(f"Scheduled upload error: {e}", exc_info=True)
+        await message.answer(f"Publish error: {e}")
+
+
+async def build_video_for_user(user_id, variants, message):
+    """Основная функция сборки видео."""
+    try:
+        tmp_dir = tempfile.mkdtemp()
+        clip_paths = []
+
+        for idx, variant in enumerate(variants, start=1):
+            left_label, right_label = parse_vs(variant)
+            await message.answer(f"Battle {idx}/5: {left_label} VS {right_label}")
+            left_img = fetch_image(left_label)
+            right_img = fetch_image(right_label)
+            clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
+            clip_paths.append(clip_path)
+
+        await message.answer("Merging final video...")
+        final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
+        title, description = generate_metadata(variants)
+
+        pending_videos[user_id] = {
+            "path": final_path,
+            "tmp_dir": tmp_dir,
+            "title": title,
+            "description": description
+        }
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📅 Добавить в очередь", callback_data="add_to_queue"),
+            InlineKeyboardButton(text="🚀 Опубликовать сейчас", callback_data="publish_now"),
+        ]])
+
+        await message.answer_video(
+            FSInputFile(final_path, filename="vs_battle.mp4"),
+            caption=f"Ready! Title: {title}",
+            supports_streaming=True
+        )
+        await message.answer("Publish to YouTube?", reply_markup=kb)
+
+    except Exception as e:
+        logger.error(f"Build error: {e}", exc_info=True)
+        await message.answer(f"Error: {e}")
 
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer("🎲 Генератор VS запущен", reply_markup=keyboard)
+    await message.answer("BattleVote Bot ready!", reply_markup=keyboard)
 
 
-@dp.message(F.text == "🎲 Генерация вариантов")
-async def generate(message: Message):
+@dp.message(F.text == "🎬 Собрать видео")
+async def auto_build(message: Message):
     user_id = message.from_user.id
-    user_choices[user_id] = []
-    variant_storage[user_id] = {}
 
     if user_id not in used_variants:
         used_variants[user_id] = set()
@@ -502,123 +482,115 @@ async def generate(message: Message):
     for v in variants:
         used_variants[user_id].add(v)
 
-    for i, variant in enumerate(variants, start=1):
-        variant_storage[user_id][str(i)] = variant
+    await message.answer(f"Generating video with:\n" + "\n".join(f"* {v}" for v in variants))
+    await build_video_for_user(user_id, variants, message)
+
+
+@dp.message(F.text == "🎲 Выбрать темы вручную")
+async def manual_select(message: Message):
+    user_id = message.from_user.id
+    user_choices_manual = {}
+
+    if user_id not in used_variants:
+        used_variants[user_id] = set()
+
+    available = [v for v in VS_POOL if v not in used_variants[user_id]]
+    if len(available) < 5:
+        used_variants[user_id] = set()
+        available = VS_POOL.copy()
+
+    variants = random.sample(available, 5)
+
+    # Сохраняем варианты
+    if not hasattr(dp, '_manual_variants'):
+        dp._manual_variants = {}
+    dp._manual_variants[user_id] = {"options": variants, "selected": []}
+
+    for i, v in enumerate(variants, 1):
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Использовать", callback_data=f"use_{i}"),
-            InlineKeyboardButton(text="🔄 Заменить", callback_data=f"replace_{i}")
+            InlineKeyboardButton(text="Use", callback_data=f"manual_use_{i}"),
+            InlineKeyboardButton(text="Skip", callback_data=f"manual_skip_{i}")
         ]])
-        await message.answer(f"Вариант {i}\n\n{variant}", reply_markup=kb)
+        await message.answer(f"{i}. {v}", reply_markup=kb)
 
 
-@dp.callback_query(F.data.startswith("use_"))
-async def use_variant(callback: CallbackQuery):
+@dp.callback_query(F.data.startswith("manual_use_"))
+async def manual_use(callback: CallbackQuery):
     user_id = callback.from_user.id
-    number = callback.data.split("_")[1]
+    idx = int(callback.data.split("_")[2]) - 1
 
-    if user_id not in variant_storage or number not in variant_storage.get(user_id, {}):
-        await callback.answer("Устарело, генерируй заново")
+    if not hasattr(dp, '_manual_variants') or user_id not in dp._manual_variants:
+        await callback.answer("Expired")
         return
 
-    variant = variant_storage[user_id][number]
-    if variant not in user_choices[user_id]:
-        user_choices[user_id].append(variant)
+    data = dp._manual_variants[user_id]
+    variant = data["options"][idx]
+    if variant not in data["selected"]:
+        data["selected"].append(variant)
 
-    count = len(user_choices[user_id])
-    await callback.answer(f"Выбрано {count}/5")
-
+    count = len(data["selected"])
+    await callback.answer(f"Added {count}/5")
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
 
     if count == 5:
-        result = "✅ Выбрано 5 карточек\n\n"
-        for i, item in enumerate(user_choices[user_id], start=1):
-            result += f"{i}. {item}\n"
-        result += "\n🎬 Теперь нажми:\nСгенерировать видео"
-        await callback.message.answer(result)
+        await callback.message.answer("5 selected! Building video...")
+        await build_video_for_user(user_id, data["selected"], callback.message)
+        del dp._manual_variants[user_id]
 
 
-@dp.callback_query(F.data.startswith("replace_"))
-async def replace_variant(callback: CallbackQuery):
+@dp.callback_query(F.data.startswith("manual_skip_"))
+async def manual_skip(callback: CallbackQuery):
+    await callback.answer("Skipped")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data == "add_to_queue")
+async def add_to_queue(callback: CallbackQuery):
     user_id = callback.from_user.id
-    number = callback.data.split("_")[1]
-    new_variant = random.choice(VS_POOL)
-    variant_storage[user_id][number] = new_variant
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Использовать", callback_data=f"use_{number}"),
-        InlineKeyboardButton(text="🔄 Заменить", callback_data=f"replace_{number}")
-    ]])
-    await callback.message.edit_text(f"Вариант {number}\n\n{new_variant}", reply_markup=kb)
-    await callback.answer()
-
-
-@dp.message(F.text == "🎨 Сгенерировать видео")
-async def generate_video(message: Message):
-    user_id = message.from_user.id
-
-    if user_id not in user_choices or len(user_choices[user_id]) < 5:
-        count = len(user_choices.get(user_id, []))
-        await message.answer(f"Нужно выбрать 5 карточек. Сейчас: {count}/5")
+    if user_id not in pending_videos:
+        await callback.answer("Video not found.")
         return
 
-    await message.answer("🎬 Загружаю фото и генерирую видео...\n⏳ Подожди 2-3 минуты!")
-
+    await callback.answer()
     try:
-        tmp_dir = tempfile.mkdtemp()
-        clip_paths = []
-        variants = user_choices[user_id]
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
-        for idx, variant in enumerate(variants, start=1):
-            left_label, right_label = parse_vs(variant)
-            await message.answer(f"🖼 Батл {idx}/5: {left_label} VS {right_label}")
-            left_img = fetch_image(left_label)
-            right_img = fetch_image(right_label)
-            clip_path = build_battle_clip(
-                left_label, right_label, left_img, right_img, tmp_dir, idx)
-            clip_paths.append(clip_path)
+    video_data = pending_videos.pop(user_id)
+    slot_hour, target_utc, target_day = get_next_slot(user_id)
+    slot_id = f"{target_day}_{slot_hour}"
 
-        await message.answer("🎞 Склеиваю финальное видео...")
-        final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
+    if user_id not in publish_queue:
+        publish_queue[user_id] = []
 
-        # Генерируем метаданные
-        title, description = generate_video_metadata(variants)
+    publish_queue[user_id].append({
+        "id": slot_id,
+        "hour_est": slot_hour,
+        "day": target_day,
+        "target_utc": target_utc
+    })
 
-        # Сохраняем для публикации
-        pending_videos[user_id] = {
-            "path": final_path,
-            "tmp_dir": tmp_dir,
-            "title": title,
-            "description": description
-        }
+    is_dst = 3 <= datetime.datetime.utcnow().month <= 11
+    day_str = "Today" if target_day == datetime.datetime.utcnow().date() else "Tomorrow"
 
-        # Отправляем превью в Telegram
-        await message.answer_video(
-            FSInputFile(final_path, filename="vs_battle.mp4"),
-            caption=f"🎬 Готово! Проверь видео.\n\n📝 Название:\n{title}\n\n📄 Описание будет добавлено автоматически.",
-            supports_streaming=True
-        )
+    queue_text = f"Added to queue!\n{day_str} at {slot_hour}:00 EST\n\nFull queue:\n"
+    for i, s in enumerate(publish_queue[user_id], 1):
+        d = "Today" if s["day"] == datetime.datetime.utcnow().date() else "Tomorrow"
+        queue_text += f"{i}. {d} {s['hour_est']}:00 EST\n"
 
-        # Кнопки публикации с планировщиком
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🚀 Сейчас", callback_data="publish_now"),
-                InlineKeyboardButton(text="⏰ Запланировать", callback_data="publish_schedule"),
-            ],
-            [
-                InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_publish")
-            ]
-        ])
-        await message.answer(
-            "Когда публиковать на YouTube?",
-            reply_markup=kb
-        )
+    await callback.message.answer(queue_text)
 
-    except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
-        await message.answer(f"❌ Ошибка:\n{e}")
+    asyncio.create_task(
+        delayed_publish(user_id, slot_id, video_data, target_utc, callback.message)
+    )
 
 
 @dp.callback_query(F.data == "publish_now")
@@ -626,123 +598,112 @@ async def publish_now(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     if user_id not in pending_videos:
-        await callback.answer("Видео не найдено. Сгенерируй заново.")
+        await callback.answer("Video not found.")
         return
 
-    await callback.answer("Публикую...")
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("🚀 Загружаю на YouTube...")
+    await callback.answer("Publishing...")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await callback.message.answer("Uploading to YouTube...")
 
     try:
-        video_data = pending_videos[user_id]
-        url = upload_to_youtube(
-            video_data["path"],
-            video_data["title"],
-            video_data["description"]
-        )
-        del pending_videos[user_id]
-        await callback.message.answer(f"✅ Опубликовано!\n\n{url}")
+        video_data = pending_videos.pop(user_id)
+        url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
+        await callback.message.answer(f"Published!\n{url}")
     except Exception as e:
-        logger.error(f"YouTube upload error: {e}", exc_info=True)
-        await callback.message.answer(f"❌ Ошибка публикации:\n{e}")
+        logger.error(f"Upload error: {e}", exc_info=True)
+        await callback.message.answer(f"Error: {e}")
 
 
-@dp.callback_query(F.data == "publish_schedule")
-async def publish_schedule(callback: CallbackQuery):
-    user_id = callback.from_user.id
+AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))  # твой Telegram user_id
+AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 
-    if user_id not in pending_videos:
-        await callback.answer("Видео не найдено.")
+
+async def autopilot():
+    """Автопилот — генерирует и публикует 3 видео в день по расписанию EST."""
+    if not AUTOPILOT_ENABLED or not AUTOPILOT_USER_ID:
         return
 
-    await callback.answer()
-    await callback.message.edit_reply_markup(reply_markup=None)
+    logger.info("Autopilot started")
 
-    # Предлагаем время публикации (EST — американское время)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🌅 9:00 AM EST", callback_data="sched_9"),
-            InlineKeyboardButton(text="☀️ 12:00 PM EST", callback_data="sched_12"),
-        ],
-        [
-            InlineKeyboardButton(text="🌆 3:00 PM EST", callback_data="sched_15"),
-            InlineKeyboardButton(text="🌇 6:00 PM EST", callback_data="sched_18"),
-        ],
-        [
-            InlineKeyboardButton(text="🌙 9:00 PM EST", callback_data="sched_21"),
-            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_publish"),
-        ]
-    ])
-    await callback.message.answer(
-        "⏰ Выбери время публикации (EST — США):\n\nЛучшее время для американской аудитории: 3:00 PM или 6:00 PM EST",
-        reply_markup=kb
-    )
+    while True:
+        now_utc = datetime.datetime.utcnow()
+        is_dst = 3 <= now_utc.month <= 11
+        utc_offset = 4 if is_dst else 5
 
+        # Ближайший слот
+        next_target = None
+        next_slot = None
 
-@dp.callback_query(F.data.startswith("sched_"))
-async def schedule_publish(callback: CallbackQuery):
-    import datetime
-    user_id = callback.from_user.id
-    hour_est = int(callback.data.split("_")[1])
+        for slot in QUEUE_SLOTS:
+            target_hour_utc = (slot + utc_offset) % 24
+            target = now_utc.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
+            if target <= now_utc:
+                target += datetime.timedelta(days=1)
+            if next_target is None or target < next_target:
+                next_target = target
+                next_slot = slot
 
-    if user_id not in pending_videos:
-        await callback.answer("Видео не найдено.")
-        return
+        delay = (next_target - now_utc).total_seconds()
+        hours = int(delay // 3600)
+        mins = int((delay % 3600) // 60)
+        logger.info(f"Autopilot: next publish at {next_slot}:00 EST (in {hours}h {mins}m)")
 
-    await callback.answer()
-    await callback.message.edit_reply_markup(reply_markup=None)
+        await asyncio.sleep(delay)
 
-    # EST = UTC-5 (зима) / UTC-4 (лето)
-    now_utc = datetime.datetime.utcnow()
-    # Определяем DST приблизительно
-    is_dst = 3 <= now_utc.month <= 11
-    utc_offset = 4 if is_dst else 5
-    target_hour_utc = (hour_est + utc_offset) % 24
+        # Генерируем видео
+        try:
+            user_id = AUTOPILOT_USER_ID
 
-    # Ближайшее время публикации
-    target = now_utc.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
-    if target <= now_utc:
-        target += datetime.timedelta(days=1)
+            if user_id not in used_variants:
+                used_variants[user_id] = set()
 
-    delay_seconds = (target - now_utc).total_seconds()
-    delay_minutes = int(delay_seconds / 60)
-    delay_hours = delay_minutes // 60
-    delay_mins = delay_minutes % 60
+            available = [v for v in VS_POOL if v not in used_variants[user_id]]
+            if len(available) < 5:
+                used_variants[user_id] = set()
+                available = VS_POOL.copy()
 
-    await callback.message.answer(
-        f"⏰ Видео будет опубликовано в {hour_est}:00 EST\nОсталось: {delay_hours}ч {delay_mins}мин\n\nНе выключай бота!"
-    )
+            variants = random.sample(available, 5)
+            for v in variants:
+                used_variants[user_id].add(v)
 
-    # Ждём и публикуем
-    await asyncio.sleep(delay_seconds)
+            logger.info(f"Autopilot generating: {variants}")
+            await bot.send_message(user_id, f"Autopilot: generating {next_slot}:00 EST video...")
 
-    try:
-        if user_id in pending_videos:
-            video_data = pending_videos[user_id]
-            url = upload_to_youtube(
-                video_data["path"],
-                video_data["title"],
-                video_data["description"]
-            )
-            del pending_videos[user_id]
-            await callback.message.answer(f"✅ Опубликовано по расписанию!\n\n{url}")
-    except Exception as e:
-        logger.error(f"Scheduled upload error: {e}", exc_info=True)
-        await callback.message.answer(f"❌ Ошибка публикации по расписанию:\n{e}")
+            tmp_dir = tempfile.mkdtemp()
+            clip_paths = []
 
+            for idx, variant in enumerate(variants, start=1):
+                left_label, right_label = parse_vs(variant)
+                left_img = fetch_image(left_label)
+                right_img = fetch_image(right_label)
+                clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
+                clip_paths.append(clip_path)
 
-@dp.callback_query(F.data == "cancel_publish")
-async def cancel_publish(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    if user_id in pending_videos:
-        del pending_videos[user_id]
-    await callback.answer("Отменено")
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("❌ Публикация отменена.")
+            final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
+            title, description = generate_metadata(variants)
+
+            url = upload_to_youtube(final_path, title, description)
+            await bot.send_message(user_id, f"Autopilot published!\n{url}")
+            logger.info(f"Autopilot published: {url}")
+
+        except Exception as e:
+            logger.error(f"Autopilot error: {e}", exc_info=True)
+            try:
+                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
+            except Exception:
+                pass
+
+        await asyncio.sleep(60)  # небольшая пауза чтобы не попасть в тот же слот
 
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
+    if AUTOPILOT_ENABLED:
+        asyncio.create_task(autopilot())
     await dp.start_polling(bot)
 
 
