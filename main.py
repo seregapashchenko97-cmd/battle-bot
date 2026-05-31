@@ -30,12 +30,13 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-bot = Bot(BOT_TOKEN)
+from aiogram.client.default import DefaultBotProperties
+bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
 
 FONT_PATH = "Anton-Regular.ttf"
 CLIP_DURATION = 5
-FPS = 24
+FPS = 20
 W, H = 720, 1280
 
 keyboard = ReplyKeyboardMarkup(
