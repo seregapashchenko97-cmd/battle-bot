@@ -216,6 +216,58 @@ def build_frame(left_label, right_label, left_img, right_img,
     return card
 
 
+def build_hook_frame(left_label, right_label):
+    """Первый фрейм — крючок на весь экран."""
+    card = Image.new("RGB", (W, H), (0, 0, 0))
+    draw = ImageDraw.Draw(card)
+
+    try:
+        font_big = ImageFont.truetype(FONT_PATH, 90)
+        font_vs   = ImageFont.truetype(FONT_PATH, 130)
+        font_sub  = ImageFont.truetype(FONT_PATH, 55)
+    except Exception:
+        font_big = font_vs = font_sub = ImageFont.load_default()
+
+    # Красная линия посередине
+    draw.line([(0, H//2), (W, H//2)], fill=(220, 30, 30), width=8)
+
+    # WHICH WOULD YOU CHOOSE?
+    draw.text((W//2, 120), "WHICH WOULD", font=font_big,
+              fill=(255, 255, 255), anchor="mt",
+              stroke_width=4, stroke_fill=(0, 0, 0))
+    draw.text((W//2, 230), "YOU CHOOSE?", font=font_big,
+              fill=(255, 50, 50), anchor="mt",
+              stroke_width=4, stroke_fill=(0, 0, 0))
+
+    # Верхний вариант
+    draw.text((W//2, H//2 - 100), "TOP:", font=font_sub,
+              fill=(255, 255, 100), anchor="mb",
+              stroke_width=2, stroke_fill=(0, 0, 0))
+    draw.text((W//2, H//2 - 60), left_label.upper(), font=font_sub,
+              fill=(255, 255, 255), anchor="mb",
+              stroke_width=3, stroke_fill=(0, 0, 0))
+
+    # VS
+    draw.text((W//2, H//2), "VS", font=font_vs,
+              fill=(220, 30, 30), anchor="mm",
+              stroke_width=5, stroke_fill=(0, 0, 0))
+
+    # Нижний вариант
+    draw.text((W//2, H//2 + 60), right_label.upper(), font=font_sub,
+              fill=(255, 255, 255), anchor="mt",
+              stroke_width=3, stroke_fill=(0, 0, 0))
+    draw.text((W//2, H//2 + 100), "BOTTOM:", font=font_sub,
+              fill=(255, 255, 100), anchor="mt",
+              stroke_width=2, stroke_fill=(0, 0, 0))
+
+    # Снизу призыв
+    draw.text((W//2, H - 120), "COMMENT YOUR CHOICE", font=font_sub,
+              fill=(255, 255, 100), anchor="mb",
+              stroke_width=3, stroke_fill=(0, 0, 0))
+
+    return card
+
+
 def make_beep_pcm(freq=880, sr=44100, duration=0.12):
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     wave = (0.4 * np.sin(2 * np.pi * freq * t) * np.linspace(1, 0, len(t))).astype(np.float32)
@@ -234,6 +286,16 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
 
     frames_bytes = b""
     audio_bytes = b""
+
+    # Хук — первые 1.5 секунды (30 фреймов)
+    hook_frame = build_hook_frame(left_label, right_label)
+    hook_bytes = hook_frame.tobytes()
+    hook_frames = int(FPS * 1.5)
+    for _ in range(hook_frames):
+        frames_bytes += hook_bytes
+    # Тихий звук для хука
+    hook_silence = np.zeros(int(44100 * 1.5) * 2, dtype=np.int16)
+    audio_bytes += hook_silence.tobytes()
 
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
