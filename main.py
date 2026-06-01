@@ -154,8 +154,17 @@ def fetch_image(query):
     if GEMINI_API_KEY:
         try:
             session = get_session()
+            # AQ. ключи используют Bearer, AIza. используют ?key=
+            if GEMINI_API_KEY.startswith("AQ."):
+                headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent"
+            else:
+                headers = {"Content-Type": "application/json"}
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key={GEMINI_API_KEY}"
+
             r = session.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key={GEMINI_API_KEY}",
+                url,
+                headers=headers,
                 json={
                     "contents": [{"parts": [{"text": full_prompt}]}],
                     "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
@@ -343,15 +352,7 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
     frames_bytes = b""
     audio_bytes = b""
 
-    # Хук только на первом клипе
-    if index == 1:
-        hook_frame = build_hook_frame(left_label, right_label)
-        hook_bytes = hook_frame.tobytes()
-        hook_frames = int(FPS * 1.5)
-        for _ in range(hook_frames):
-            frames_bytes += hook_bytes
-        hook_silence = np.zeros(int(44100 * 1.5) * 2, dtype=np.int16)
-        audio_bytes += hook_silence.tobytes()
+
 
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
