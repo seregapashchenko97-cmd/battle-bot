@@ -12,6 +12,7 @@ import json
 import urllib.request
 import urllib.parse
 import datetime
+import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY", "")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
@@ -102,9 +104,29 @@ QUERY_MAP = {
 }
 
 # Хранилища
-used_variants = {}
 pending_videos = {}
-publish_queue = {}  # user_id -> список запланированных слотов
+publish_queue = {}
+USED_VARIANTS_FILE = "/tmp/used_variants.json"
+
+
+def load_used_variants():
+    try:
+        with open(USED_VARIANTS_FILE, "r") as f:
+            data = json.load(f)
+            return {int(k): set(v) for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def save_used_variants(used):
+    try:
+        with open(USED_VARIANTS_FILE, "w") as f:
+            json.dump({str(k): list(v) for k, v in used.items()}, f)
+    except Exception:
+        pass
+
+
+used_variants = load_used_variants()
 
 
 def get_session():
@@ -120,7 +142,65 @@ def parse_vs(variant):
 
 
 def fetch_image(query):
-    logger.info(f"Fetching: {query}")
+    """Генерируем AI картинку через Replicate FLUX, fallback на Pexels."""
+    logger.info(f"Generating image for: {query}")
+
+    # Пробуем Replicate FLUX
+    if REPLICATE_API_KEY:
+        try:
+            prompt = f"{query}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, no text, no watermark"
+            session = get_session()
+
+            # Создаём prediction
+            r = session.post(
+                "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+                headers={
+                    "Authorization": f"Bearer {REPLICATE_API_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "wait"
+                },
+                json={
+                    "input": {
+                        "prompt": prompt,
+                        "width": 1080,
+                        "height": 960,
+                        "num_outputs": 1,
+                        "num_inference_steps": 4,
+                    }
+                },
+                timeout=60
+            )
+            r.raise_for_status()
+            result = r.json()
+
+            img_url = None
+            if result.get("output"):
+                img_url = result["output"][0]
+            elif result.get("urls", {}).get("get"):
+                # Polling если не готово
+                for _ in range(20):
+                    time.sleep(3)
+                    poll = session.get(
+                        result["urls"]["get"],
+                        headers={"Authorization": f"Bearer {REPLICATE_API_KEY}"},
+                        timeout=30
+                    )
+                    poll_data = poll.json()
+                    if poll_data.get("status") == "succeeded":
+                        img_url = poll_data["output"][0]
+                        break
+
+            if img_url:
+                img_r = session.get(img_url, timeout=30)
+                img_r.raise_for_status()
+                logger.info(f"Replicate image generated for: {query}")
+                return Image.open(io.BytesIO(img_r.content)).convert("RGB")
+
+        except Exception as e:
+            logger.warning(f"Replicate failed for '{query}': {e}")
+
+    # Fallback на Pexels
+    logger.info(f"Falling back to Pexels for: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
     search_query = QUERY_MAP.get(query, query)
@@ -138,6 +218,7 @@ def fetch_image(query):
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
             logger.warning(f"Pexels failed '{q}': {e}")
+
     return Image.new("RGB", (W, H // 2), (20, 20, 20))
 
 
@@ -287,15 +368,15 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
     frames_bytes = b""
     audio_bytes = b""
 
-    # Хук — первые 1.5 секунды (30 фреймов)
-    hook_frame = build_hook_frame(left_label, right_label)
-    hook_bytes = hook_frame.tobytes()
-    hook_frames = int(FPS * 1.5)
-    for _ in range(hook_frames):
-        frames_bytes += hook_bytes
-    # Тихий звук для хука
-    hook_silence = np.zeros(int(44100 * 1.5) * 2, dtype=np.int16)
-    audio_bytes += hook_silence.tobytes()
+    # Хук только на первом клипе
+    if index == 1:
+        hook_frame = build_hook_frame(left_label, right_label)
+        hook_bytes = hook_frame.tobytes()
+        hook_frames = int(FPS * 1.5)
+        for _ in range(hook_frames):
+            frames_bytes += hook_bytes
+        hook_silence = np.zeros(int(44100 * 1.5) * 2, dtype=np.int16)
+        audio_bytes += hook_silence.tobytes()
 
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
@@ -381,6 +462,14 @@ def generate_metadata(variants):
     desc += "Subscribe for daily battles @BattleVoteUSA\n\n"
     desc += "#shorts #vs #battle #wouldyourather #pickone #chooseside #viral #battlevote"
     return title, desc
+
+
+def generate_tiktok_metadata(variants):
+    """Метаданные для TikTok."""
+    title = f"{variants[0]} 🔥 Which side are you? Comment below!"
+    tags = "#vs #battle #foryou #foryoupage #viral #fyp #wouldyourather #pickone #shorts #battlevote #trending #chooseside #versus"
+    description = f"{title}\n\n{tags}"
+    return title, description
 
 
 def get_youtube_token():
@@ -513,10 +602,15 @@ async def build_video_for_user(user_id, variants, message):
             InlineKeyboardButton(text="🚀 Опубликовать сейчас", callback_data="publish_now"),
         ]])
 
+        tiktok_title, tiktok_desc = generate_tiktok_metadata(variants)
+
         await message.answer_video(
             FSInputFile(final_path, filename="vs_battle.mp4"),
-            caption=f"Ready! Title: {title}",
+            caption=f"Ready!",
             supports_streaming=True
+        )
+        await message.answer(
+            f"YouTube title:\n{title}\n\nTikTok caption:\n{tiktok_desc}",
         )
         await message.answer("Publish to YouTube?", reply_markup=kb)
 
@@ -545,6 +639,7 @@ async def auto_build(message: Message):
     variants = random.sample(available, 5)
     for v in variants:
         used_variants[user_id].add(v)
+    save_used_variants(used_variants)
 
     await message.answer(f"Generating video with:\n" + "\n".join(f"* {v}" for v in variants))
     await build_video_for_user(user_id, variants, message)
@@ -733,6 +828,7 @@ async def autopilot():
             variants = random.sample(available, 5)
             for v in variants:
                 used_variants[user_id].add(v)
+            save_used_variants(used_variants)
 
             logger.info(f"Autopilot generating: {variants}")
             await bot.send_message(user_id, f"Autopilot: generating {next_slot}:00 EST video...")
