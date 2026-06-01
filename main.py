@@ -141,9 +141,36 @@ def parse_vs(variant):
     return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else ("Left", "Right")
 
 
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
+
+
 def fetch_image(query):
-    """Получаем фото с Pexels."""
-    logger.info(f"Fetching: {query}")
+    """Генерируем AI фото через HuggingFace, fallback на Pexels."""
+    logger.info(f"Generating image for: {query}")
+    prompt = QUERY_MAP.get(query, query)
+    full_prompt = f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text"
+
+    # Пробуем HuggingFace
+    if HF_TOKEN:
+        try:
+            session = get_session()
+            r = session.post(
+                f"https://api-inference.huggingface.co/models/{HF_MODEL}",
+                headers={"Authorization": f"Bearer {HF_TOKEN}"},
+                json={"inputs": full_prompt, "parameters": {"width": 1024, "height": 1024}},
+                timeout=120
+            )
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+                logger.info(f"HF image generated for: {query}")
+                return Image.open(io.BytesIO(r.content)).convert("RGB")
+            else:
+                logger.warning(f"HF failed: {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            logger.warning(f"HF error for '{query}': {e}")
+
+    # Fallback на Pexels
+    logger.info(f"Falling back to Pexels for: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
     search_query = QUERY_MAP.get(query, query)
@@ -158,10 +185,10 @@ def fetch_image(query):
                 img_url = random.choice(photos)["src"]["large"]
                 img_r = session.get(img_url, timeout=20)
                 img_r.raise_for_status()
-                logger.info(f"Image fetched for: {query}")
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
             logger.warning(f"Pexels failed '{q}': {e}")
+
     return Image.new("RGB", (W, H // 2), (20, 20, 20))
 
 
