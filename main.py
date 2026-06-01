@@ -34,11 +34,12 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY", "")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
+AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
+AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
@@ -47,73 +48,277 @@ FONT_PATH = "Anton-Regular.ttf"
 CLIP_DURATION = 5
 FPS = 20
 W, H = 720, 1280
-
-# Слоты публикации в EST (час)
 QUEUE_SLOTS = [9, 15, 21]
 
-keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🎬 Собрать видео")],
-        [KeyboardButton(text="🎲 Выбрать темы вручную")]
-    ],
-    resize_keyboard=True
-)
-
-VS_POOL = [
-    "Money VS Love", "Fame VS Happiness", "Loyalty VS Ambition",
-    "Revenge VS Forgiveness", "Power VS Freedom", "Hustle VS Balance",
-    "Alpha VS Sigma", "Truth VS Kindness", "Passion VS Reason",
-    "Silence VS Reaction", "Respected VS Loved", "Rich Alone VS Poor Together",
-    "Short Pleasure VS Long Success", "Fake Smile VS Real Pain",
-    "Hard Truth VS Sweet Lie", "One Real Friend VS Thousand Fans",
-    "Safe Life VS Wild Life", "Street Smart VS Book Smart",
-    "Work Hard VS Work Smart", "Live Now VS Plan Forever",
-    "Ferrari VS Lamborghini", "iPhone VS Android", "Nike VS Adidas",
-    "Rolls Royce VS Bugatti", "Las Vegas VS Dubai", "Gym VS Couch",
-    "Billionaire VS Rock Star", "Love At First Sight VS Deep Connection",
-    "Die Famous VS Live Unknown", "Leader VS Lone Wolf",
-]
-
-QUERY_MAP = {
-    "Money": "cash money luxury", "Love": "couple romance",
-    "Fame": "spotlight celebrity", "Happiness": "smile joy",
-    "Loyalty": "friendship trust", "Ambition": "success business",
-    "Revenge": "dark storm", "Forgiveness": "peace calm light",
-    "Power": "strength leader", "Freedom": "open road sky",
-    "Hustle": "work hard office", "Balance": "yoga zen nature",
-    "Alpha": "confident leader", "Sigma": "lone wolf solitary",
-    "Truth": "light clarity", "Kindness": "help charity",
-    "Passion": "fire energy", "Reason": "chess logic",
-    "Silence": "quiet empty", "Reaction": "crowd surprise",
-    "Respected": "leader award", "Loved": "couple family",
-    "Rich": "luxury mansion", "Poor": "community together",
-    "Ferrari": "red ferrari sports car", "Lamborghini": "lamborghini supercar",
-    "iPhone": "apple iphone", "Android": "samsung android",
-    "Nike": "nike shoes sport", "Adidas": "adidas sneakers",
-    "Rolls Royce": "rolls royce luxury", "Bugatti": "bugatti supercar",
-    "Las Vegas": "las vegas night", "Dubai": "dubai skyline",
-    "Gym": "gym workout fitness", "Couch": "relax home sofa",
-    "Billionaire": "billionaire yacht", "Rock Star": "rock concert stage",
-    "Leader": "leadership business", "Lone Wolf": "alone forest dark",
-    "Fake Smile": "smile mask fake", "Real Pain": "sad alone dark",
-    "Hard Truth": "truth mirror honest", "Sweet Lie": "lie sugar candy",
-    "Safe Life": "comfortable home safe", "Wild Life": "adventure extreme sport",
-    "Short Pleasure": "party fun night", "Long Success": "trophy winner success",
-    "Live Now": "party enjoy present", "Plan Forever": "calendar plan future",
-    "Die Famous": "celebrity spotlight famous", "Live Unknown": "alone quiet peaceful",
+# ============================================================
+# ТЕМАТИЧЕСКИЕ КАТЕГОРИИ
+# ============================================================
+CATEGORIES = {
+    "💰 Money & Success": {
+        "battles": [
+            ("Money", "Love"),
+            ("Fame", "Happiness"),
+            ("Hustle", "Balance"),
+            ("Rich & Alone", "Poor & Together"),
+            ("Billionaire", "Rock Star"),
+            ("Work Hard", "Work Smart"),
+            ("Success", "Peace of Mind"),
+            ("Power", "Freedom"),
+            ("Ambition", "Loyalty"),
+            ("Career", "Family"),
+        ],
+        "pexels": {
+            "Money": "luxury money cash gold",
+            "Love": "romantic couple love",
+            "Fame": "celebrity spotlight crowd concert",
+            "Happiness": "happy laughing friends joy",
+            "Hustle": "businessman working hard office",
+            "Balance": "yoga meditation peaceful nature",
+            "Rich & Alone": "luxury penthouse alone",
+            "Poor & Together": "friends together happy community",
+            "Billionaire": "yacht luxury mansion private jet",
+            "Rock Star": "rock concert stage performer",
+            "Work Hard": "working late night laptop grind",
+            "Work Smart": "smart strategy chess planning",
+            "Success": "winner trophy podium celebrate",
+            "Peace of Mind": "peaceful calm nature zen",
+            "Power": "strong leader confident",
+            "Freedom": "open road motorcycle freedom sky",
+            "Ambition": "skyscraper climbing top goal",
+            "Loyalty": "friendship trust handshake bond",
+            "Career": "corporate office career suit",
+            "Family": "family together home warm",
+        }
+    },
+    "🚗 Cars & Luxury": {
+        "battles": [
+            ("Ferrari", "Lamborghini"),
+            ("Rolls Royce", "Bugatti"),
+            ("BMW", "Mercedes"),
+            ("Porsche", "Aston Martin"),
+            ("Tesla", "Ferrari"),
+            ("Sports Car", "SUV"),
+            ("Lamborghini Urus", "Porsche Cayenne"),
+            ("McLaren", "Ferrari"),
+            ("Bentley", "Rolls Royce"),
+            ("Corvette", "Mustang"),
+        ],
+        "pexels": {
+            "Ferrari": "red ferrari sports car race",
+            "Lamborghini": "lamborghini yellow supercar",
+            "Rolls Royce": "rolls royce luxury black car",
+            "Bugatti": "bugatti chiron supercar fast",
+            "BMW": "bmw m3 sports car",
+            "Mercedes": "mercedes amg luxury car",
+            "Porsche": "porsche 911 sports car",
+            "Aston Martin": "aston martin luxury british car",
+            "Tesla": "tesla electric car modern",
+            "Sports Car": "sports car racing track speed",
+            "SUV": "suv luxury offroad",
+            "Lamborghini Urus": "lamborghini urus suv",
+            "Porsche Cayenne": "porsche cayenne suv",
+            "McLaren": "mclaren supercar british",
+            "Bentley": "bentley luxury continental",
+            "Corvette": "corvette american muscle car",
+            "Mustang": "ford mustang muscle car",
+        }
+    },
+    "🍔 Food & Drink": {
+        "battles": [
+            ("Burger", "Pizza"),
+            ("Sushi", "Steak"),
+            ("Coffee", "Energy Drink"),
+            ("Tacos", "Burrito"),
+            ("Ramen", "Pasta"),
+            ("Fried Chicken", "Grilled Salmon"),
+            ("Cheesecake", "Chocolate Cake"),
+            ("Beer", "Whiskey"),
+            ("Chips", "Popcorn"),
+            ("Pancakes", "Waffles"),
+        ],
+        "pexels": {
+            "Burger": "juicy gourmet burger dark background",
+            "Pizza": "pizza slice melted cheese close up",
+            "Sushi": "sushi rolls japanese food",
+            "Steak": "grilled steak medium rare juicy",
+            "Coffee": "coffee espresso dark background moody",
+            "Energy Drink": "energy drink can neon dark",
+            "Tacos": "mexican tacos street food",
+            "Burrito": "burrito wrap mexican food",
+            "Ramen": "ramen noodles japanese broth",
+            "Pasta": "pasta italian food sauce",
+            "Fried Chicken": "fried chicken crispy golden",
+            "Grilled Salmon": "grilled salmon healthy food",
+            "Cheesecake": "cheesecake dessert slice",
+            "Chocolate Cake": "chocolate cake dessert dark",
+            "Beer": "beer glass pub cold",
+            "Whiskey": "whiskey glass dark bar",
+            "Chips": "chips snack bowl",
+            "Popcorn": "popcorn cinema movie",
+            "Pancakes": "pancakes stack maple syrup",
+            "Waffles": "waffles breakfast sweet",
+        }
+    },
+    "🎵 Music & Entertainment": {
+        "battles": [
+            ("Hip Hop", "Rock"),
+            ("Drake", "Kendrick"),
+            ("Netflix", "Cinema"),
+            ("Vinyl", "Streaming"),
+            ("Concert", "Festival"),
+            ("Pop", "Jazz"),
+            ("Guitar", "Piano"),
+            ("Studio", "Live Performance"),
+            ("Headphones", "Speakers"),
+            ("Classical", "Electronic"),
+        ],
+        "pexels": {
+            "Hip Hop": "hip hop rapper concert urban",
+            "Rock": "rock concert guitar electric stage",
+            "Drake": "rapper music stage microphone",
+            "Kendrick": "rapper performer stage lights",
+            "Netflix": "watching tv series couch night",
+            "Cinema": "movie theater cinema screen dark",
+            "Vinyl": "vinyl record player retro music",
+            "Streaming": "spotify music phone earphones",
+            "Concert": "music concert crowd lights stage",
+            "Festival": "music festival outdoor crowd",
+            "Pop": "pop music singer stage performance",
+            "Jazz": "jazz music saxophone dark bar",
+            "Guitar": "electric guitar music dark",
+            "Piano": "piano keys music performance",
+            "Studio": "recording studio music producer",
+            "Live Performance": "live music band stage",
+            "Headphones": "headphones music listening",
+            "Speakers": "speakers sound system music",
+            "Classical": "orchestra classical music concert",
+            "Electronic": "dj electronic music club",
+        }
+    },
+    "💪 Lifestyle & Fitness": {
+        "battles": [
+            ("Gym", "Home Workout"),
+            ("Running", "Swimming"),
+            ("Vegan", "Carnivore"),
+            ("Early Bird", "Night Owl"),
+            ("City Life", "Country Life"),
+            ("Solo Travel", "Group Travel"),
+            ("Beach", "Mountains"),
+            ("Meditation", "Gym"),
+            ("Minimalism", "Luxury"),
+            ("Cold Shower", "Hot Bath"),
+        ],
+        "pexels": {
+            "Gym": "gym workout bodybuilder fitness dark",
+            "Home Workout": "home workout exercise training",
+            "Running": "running athlete marathon city",
+            "Swimming": "swimming pool athlete water",
+            "Vegan": "vegan food healthy green vegetables",
+            "Carnivore": "steak meat protein diet",
+            "Early Bird": "sunrise morning coffee fresh",
+            "Night Owl": "night city dark working late",
+            "City Life": "city skyline urban life busy",
+            "Country Life": "countryside peaceful nature farm",
+            "Solo Travel": "solo traveler backpack adventure",
+            "Group Travel": "group friends travel adventure",
+            "Beach": "tropical beach ocean sunset",
+            "Mountains": "mountain peak snow adventure",
+            "Meditation": "meditation yoga peace mindfulness",
+            "Minimalism": "minimalist clean simple interior",
+            "Luxury": "luxury lifestyle expensive fashion",
+            "Cold Shower": "cold shower water refreshing",
+            "Hot Bath": "hot bath relaxing spa",
+        }
+    },
+    "📱 Tech & Brands": {
+        "battles": [
+            ("iPhone", "Android"),
+            ("Nike", "Adidas"),
+            ("PlayStation", "Xbox"),
+            ("Mac", "PC"),
+            ("Instagram", "TikTok"),
+            ("Apple Watch", "Rolex"),
+            ("Google", "Apple"),
+            ("YouTube", "Netflix"),
+            ("Uber", "Taxi"),
+            ("Amazon", "Local Shop"),
+        ],
+        "pexels": {
+            "iPhone": "iphone apple smartphone modern",
+            "Android": "samsung android smartphone",
+            "Nike": "nike shoes sneakers sport",
+            "Adidas": "adidas sneakers shoes sport",
+            "PlayStation": "playstation gaming console controller",
+            "Xbox": "xbox gaming controller",
+            "Mac": "macbook apple laptop",
+            "PC": "gaming pc desktop setup",
+            "Instagram": "instagram phone social media",
+            "TikTok": "tiktok phone social media video",
+            "Apple Watch": "apple watch smartwatch tech",
+            "Rolex": "rolex watch luxury gold",
+            "Google": "google tech modern office",
+            "Apple": "apple logo tech modern",
+            "YouTube": "youtube watching video phone",
+            "Netflix": "netflix streaming tv series",
+            "Uber": "uber ride car city",
+            "Taxi": "taxi cab yellow city",
+            "Amazon": "amazon package delivery shopping",
+            "Local Shop": "local market small business",
+        }
+    },
+    "🧠 Deep Questions": {
+        "battles": [
+            ("Truth", "Kindness"),
+            ("Revenge", "Forgiveness"),
+            ("Logic", "Intuition"),
+            ("Alpha", "Sigma"),
+            ("Respected", "Loved"),
+            ("Die Famous", "Live Unknown"),
+            ("Hard Truth", "Sweet Lie"),
+            ("Short Pleasure", "Long Success"),
+            ("Passion", "Stability"),
+            ("Being Right", "Being Happy"),
+        ],
+        "pexels": {
+            "Truth": "truth light mirror honest face",
+            "Kindness": "kindness help hand charity",
+            "Revenge": "dark storm angry revenge shadow",
+            "Forgiveness": "forgiveness light peace calm",
+            "Logic": "chess strategy thinking mind",
+            "Intuition": "intuition spiritual meditation soul",
+            "Alpha": "alpha male confident strong leader",
+            "Sigma": "lone wolf solitary alone dark forest",
+            "Respected": "respected leader business podium",
+            "Loved": "loved couple embrace romantic",
+            "Die Famous": "celebrity famous spotlight crowd",
+            "Live Unknown": "peaceful unknown quiet simple life",
+            "Hard Truth": "mirror truth face honest reality",
+            "Sweet Lie": "sweet smile fake mask illusion",
+            "Short Pleasure": "party fun night pleasure enjoy",
+            "Long Success": "success trophy achievement goal",
+            "Passion": "passion fire intense emotion",
+            "Stability": "stable home family secure",
+            "Being Right": "arguing debate strong opinion",
+            "Being Happy": "happy smile joy content",
+        }
+    },
 }
+
+# Список категорий для кнопок
+CATEGORY_NAMES = list(CATEGORIES.keys())
 
 # Хранилища
 pending_videos = {}
 publish_queue = {}
 USED_VARIANTS_FILE = "/tmp/used_variants.json"
+user_category = {}  # текущая категория пользователя
 
 
 def load_used_variants():
     try:
         with open(USED_VARIANTS_FILE, "r") as f:
             data = json.load(f)
-            return {int(k): set(v) for k, v in data.items()}
+            return {int(k): set(tuple(v) for v in vals) for k, vals in data.items()}
     except Exception:
         return {}
 
@@ -121,7 +326,7 @@ def load_used_variants():
 def save_used_variants(used):
     try:
         with open(USED_VARIANTS_FILE, "w") as f:
-            json.dump({str(k): list(v) for k, v in used.items()}, f)
+            json.dump({str(k): [list(v) for v in vals] for k, vals in used.items()}, f)
     except Exception:
         pass
 
@@ -136,69 +341,28 @@ def get_session():
     return session
 
 
-def parse_vs(variant):
-    parts = variant.split(" VS ")
-    return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else ("Left", "Right")
+def fetch_image(query, category_name):
+    logger.info(f"Fetching: {query}")
+    category = CATEGORIES.get(category_name, {})
+    pexels_map = category.get("pexels", {})
+    search_query = pexels_map.get(query, f"{query} dramatic dark")
 
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-
-
-def fetch_image(query):
-    """Генерируем AI фото через Gemini, fallback на Pexels."""
-    logger.info(f"Generating image for: {query}")
-    prompt = QUERY_MAP.get(query, query)
-    full_prompt = f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text, no watermark"
-
-    # Пробуем Gemini
-    if GEMINI_API_KEY:
-        try:
-            session = get_session()
-            # AQ. ключи используют Bearer, AIza. используют ?key=
-            if GEMINI_API_KEY.startswith("AQ."):
-                headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent"
-            else:
-                headers = {"Content-Type": "application/json"}
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key={GEMINI_API_KEY}"
-
-            r = session.post(
-                url,
-                headers=headers,
-                json={
-                    "contents": [{"parts": [{"text": full_prompt}]}],
-                    "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
-                },
-                timeout=60
-            )
-            if r.status_code == 200:
-                result = r.json()
-                for part in result.get("candidates", [{}])[0].get("content", {}).get("parts", []):
-                    if "inlineData" in part:
-                        import base64
-                        img_bytes = base64.b64decode(part["inlineData"]["data"])
-                        logger.info(f"Gemini image generated for: {query}")
-                        return Image.open(io.BytesIO(img_bytes)).convert("RGB")
-            logger.warning(f"Gemini failed: {r.status_code} {r.text[:300]}")
-        except Exception as e:
-            logger.warning(f"Gemini error for '{query}': {e}")
-
-    # Fallback на Pexels
-    logger.info(f"Falling back to Pexels for: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
-    search_query = QUERY_MAP.get(query, query)
-    for q in [search_query, query.split()[0], "dramatic dark"]:
+
+    for q in [search_query, query, "dramatic dark cinematic"]:
         try:
             r = session.get("https://api.pexels.com/v1/search",
-                           params={"query": q, "per_page": 15, "orientation": "landscape"},
+                           params={"query": q, "per_page": 20, "orientation": "landscape"},
                            headers=headers, timeout=20)
             r.raise_for_status()
             photos = r.json().get("photos", [])
             if photos:
-                img_url = random.choice(photos)["src"]["large"]
+                photo = random.choice(photos)
+                img_url = photo["src"]["large2x"] if "large2x" in photo["src"] else photo["src"]["large"]
                 img_r = session.get(img_url, timeout=20)
                 img_r.raise_for_status()
+                logger.info(f"Image fetched for: {query}")
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
             logger.warning(f"Pexels failed '{q}': {e}")
@@ -281,58 +445,6 @@ def build_frame(left_label, right_label, left_img, right_img,
     return card
 
 
-def build_hook_frame(left_label, right_label):
-    """Первый фрейм — крючок на весь экран."""
-    card = Image.new("RGB", (W, H), (0, 0, 0))
-    draw = ImageDraw.Draw(card)
-
-    try:
-        font_big = ImageFont.truetype(FONT_PATH, 90)
-        font_vs   = ImageFont.truetype(FONT_PATH, 130)
-        font_sub  = ImageFont.truetype(FONT_PATH, 55)
-    except Exception:
-        font_big = font_vs = font_sub = ImageFont.load_default()
-
-    # Красная линия посередине
-    draw.line([(0, H//2), (W, H//2)], fill=(220, 30, 30), width=8)
-
-    # WHICH WOULD YOU CHOOSE?
-    draw.text((W//2, 120), "WHICH WOULD", font=font_big,
-              fill=(255, 255, 255), anchor="mt",
-              stroke_width=4, stroke_fill=(0, 0, 0))
-    draw.text((W//2, 230), "YOU CHOOSE?", font=font_big,
-              fill=(255, 50, 50), anchor="mt",
-              stroke_width=4, stroke_fill=(0, 0, 0))
-
-    # Верхний вариант
-    draw.text((W//2, H//2 - 100), "TOP:", font=font_sub,
-              fill=(255, 255, 100), anchor="mb",
-              stroke_width=2, stroke_fill=(0, 0, 0))
-    draw.text((W//2, H//2 - 60), left_label.upper(), font=font_sub,
-              fill=(255, 255, 255), anchor="mb",
-              stroke_width=3, stroke_fill=(0, 0, 0))
-
-    # VS
-    draw.text((W//2, H//2), "VS", font=font_vs,
-              fill=(220, 30, 30), anchor="mm",
-              stroke_width=5, stroke_fill=(0, 0, 0))
-
-    # Нижний вариант
-    draw.text((W//2, H//2 + 60), right_label.upper(), font=font_sub,
-              fill=(255, 255, 255), anchor="mt",
-              stroke_width=3, stroke_fill=(0, 0, 0))
-    draw.text((W//2, H//2 + 100), "BOTTOM:", font=font_sub,
-              fill=(255, 255, 100), anchor="mt",
-              stroke_width=2, stroke_fill=(0, 0, 0))
-
-    # Снизу призыв
-    draw.text((W//2, H - 120), "COMMENT YOUR CHOICE", font=font_sub,
-              fill=(255, 255, 100), anchor="mb",
-              stroke_width=3, stroke_fill=(0, 0, 0))
-
-    return card
-
-
 def make_beep_pcm(freq=880, sr=44100, duration=0.12):
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     wave = (0.4 * np.sin(2 * np.pi * freq * t) * np.linspace(1, 0, len(t))).astype(np.float32)
@@ -342,7 +454,7 @@ def make_beep_pcm(freq=880, sr=44100, duration=0.12):
 
 
 def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, index):
-    logger.info(f"Building clip {index}")
+    logger.info(f"Building clip {index}: {left_label} VS {right_label}")
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
     audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
 
@@ -352,15 +464,12 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
     frames_bytes = b""
     audio_bytes = b""
 
-
-
     for sec in range(CLIP_DURATION, 0, -1):
         frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
         for _ in range(FPS):
             frames_bytes += frame.tobytes()
         audio_bytes += make_beep_pcm(freq=1200 if sec == 1 else 880)
 
-    # Результат — 0
     result_frame = build_frame(left_label, right_label, left_img, right_img,
                                countdown=0, show_result=True,
                                left_pct=left_pct, right_pct=right_pct)
@@ -427,25 +536,23 @@ def concat_with_ffmpeg(clip_paths, tmp_dir):
     return out
 
 
-def generate_metadata(variants):
-    title = f"{variants[0]} — Which Side Are You On? #shorts"
-    desc = "Every day we put two choices head-to-head — YOU decide the winner!\n\n"
-    desc += "Today's battles:\n"
-    for v in variants:
-        desc += f"* {v}\n"
-    desc += "\nLIKE for the top | COMMENT for the bottom\n"
-    desc += "Watch till the end to see results!\n\n"
-    desc += "Subscribe for daily battles @BattleVoteUSA\n\n"
-    desc += "#shorts #vs #battle #wouldyourather #pickone #chooseside #viral #battlevote"
+def generate_metadata(variants, category_name):
+    clean_cat = re.sub(r'[^\w\s]', '', category_name).strip()
+    title = f"{variants[0][0]} VS {variants[0][1]} — Which Side Are You On? #shorts"
+    desc = f"Every day we put two choices head-to-head — YOU decide!\n\n"
+    desc += f"Category: {clean_cat}\n\nToday's battles:\n"
+    for l, r in variants:
+        desc += f"* {l} VS {r}\n"
+    desc += "\nLIKE for top | COMMENT for bottom\n"
+    desc += "Subscribe @BattleVoteUSA\n\n"
+    desc += "#shorts #vs #battle #wouldyourather #viral #battlevote #pickone"
     return title, desc
 
 
 def generate_tiktok_metadata(variants):
-    """Метаданные для TikTok."""
-    title = f"{variants[0]} 🔥 Which side are you? Comment below!"
-    tags = "#vs #battle #foryou #foryoupage #viral #fyp #wouldyourather #pickone #shorts #battlevote #trending #chooseside #versus"
-    description = f"{title}\n\n{tags}"
-    return title, description
+    title = f"{variants[0][0]} VS {variants[0][1]} 🔥 Which side are you? Comment below!"
+    tags = "#vs #battle #foryou #fyp #viral #wouldyourather #pickone #shorts #battlevote #trending"
+    return title, f"{title}\n\n{tags}"
 
 
 def get_youtube_token():
@@ -501,7 +608,6 @@ def upload_to_youtube(video_path, title, description):
 
 
 def get_next_slot(user_id):
-    """Находим следующий свободный слот по расписанию."""
     now_utc = datetime.datetime.utcnow()
     is_dst = 3 <= now_utc.month <= 11
     utc_offset = 4 if is_dst else 5
@@ -509,12 +615,9 @@ def get_next_slot(user_id):
     if user_id not in publish_queue:
         publish_queue[user_id] = []
 
-    # Убираем прошедшие слоты
     publish_queue[user_id] = [s for s in publish_queue[user_id] if s["target_utc"] > now_utc]
-
     busy = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == now_utc.date()]
 
-    # Ищем свободный слот сегодня
     for slot in QUEUE_SLOTS:
         if slot not in busy:
             target_hour_utc = (slot + utc_offset) % 24
@@ -522,10 +625,8 @@ def get_next_slot(user_id):
             if target > now_utc:
                 return slot, target, now_utc.date()
 
-    # Все сегодняшние заняты — берём завтра
     tomorrow = now_utc.date() + datetime.timedelta(days=1)
     busy_tomorrow = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == tomorrow]
-
     for slot in QUEUE_SLOTS:
         if slot not in busy_tomorrow:
             target_hour_utc = (slot + utc_offset) % 24
@@ -542,29 +643,28 @@ async def delayed_publish(user_id, slot_id, video_data, target_utc, message):
     try:
         url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
         publish_queue[user_id] = [s for s in publish_queue.get(user_id, []) if s["id"] != slot_id]
-        await message.answer(f"Published! {url}")
+        await message.answer(f"Published!\n{url}")
     except Exception as e:
         logger.error(f"Scheduled upload error: {e}", exc_info=True)
         await message.answer(f"Publish error: {e}")
 
 
-async def build_video_for_user(user_id, variants, message):
-    """Основная функция сборки видео."""
+async def build_video_for_user(user_id, category_name, variants, message):
     try:
         tmp_dir = tempfile.mkdtemp()
         clip_paths = []
 
-        for idx, variant in enumerate(variants, start=1):
-            left_label, right_label = parse_vs(variant)
+        for idx, (left_label, right_label) in enumerate(variants, start=1):
             await message.answer(f"Battle {idx}/5: {left_label} VS {right_label}")
-            left_img = fetch_image(left_label)
-            right_img = fetch_image(right_label)
+            left_img = fetch_image(left_label, category_name)
+            right_img = fetch_image(right_label, category_name)
             clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
             clip_paths.append(clip_path)
 
         await message.answer("Merging final video...")
         final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
-        title, description = generate_metadata(variants)
+        title, description = generate_metadata(variants, category_name)
+        _, tiktok_desc = generate_tiktok_metadata(variants)
 
         pending_videos[user_id] = {
             "path": final_path,
@@ -574,19 +674,17 @@ async def build_video_for_user(user_id, variants, message):
         }
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="📅 Добавить в очередь", callback_data="add_to_queue"),
-            InlineKeyboardButton(text="🚀 Опубликовать сейчас", callback_data="publish_now"),
+            InlineKeyboardButton(text="📅 В очередь", callback_data="add_to_queue"),
+            InlineKeyboardButton(text="🚀 Сейчас", callback_data="publish_now"),
         ]])
-
-        tiktok_title, tiktok_desc = generate_tiktok_metadata(variants)
 
         await message.answer_video(
             FSInputFile(final_path, filename="vs_battle.mp4"),
-            caption=f"Ready!",
+            caption=f"Ready! Category: {category_name}",
             supports_streaming=True
         )
         await message.answer(
-            f"YouTube title:\n{title}\n\nTikTok caption:\n{tiktok_desc}",
+            f"YouTube:\n{title}\n\nTikTok:\n{tiktok_desc}"
         )
         await message.answer("Publish to YouTube?", reply_markup=kb)
 
@@ -595,100 +693,66 @@ async def build_video_for_user(user_id, variants, message):
         await message.answer(f"Error: {e}")
 
 
+def get_category_keyboard():
+    buttons = []
+    for i in range(0, len(CATEGORY_NAMES), 2):
+        row = [KeyboardButton(text=CATEGORY_NAMES[i])]
+        if i + 1 < len(CATEGORY_NAMES):
+            row.append(KeyboardButton(text=CATEGORY_NAMES[i + 1]))
+        buttons.append(row)
+    buttons.append([KeyboardButton(text="🎲 Случайная категория")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer("BattleVote Bot ready!", reply_markup=keyboard)
+    await message.answer(
+        "BattleVote Bot\nВыбери категорию для генерации видео:",
+        reply_markup=get_category_keyboard()
+    )
 
 
-@dp.message(F.text == "🎬 Собрать видео")
-async def auto_build(message: Message):
+@dp.message(F.text == "🎲 Случайная категория")
+async def random_category(message: Message):
+    category_name = random.choice(CATEGORY_NAMES)
+    await generate_from_category(message, category_name)
+
+
+@dp.message(lambda m: m.text in CATEGORY_NAMES)
+async def category_selected(message: Message):
+    await generate_from_category(message, message.text)
+
+
+async def generate_from_category(message: Message, category_name: str):
     user_id = message.from_user.id
+    category = CATEGORIES[category_name]
+    all_battles = category["battles"]
 
     if user_id not in used_variants:
         used_variants[user_id] = set()
 
-    available = [v for v in VS_POOL if v not in used_variants[user_id]]
+    available = [b for b in all_battles if tuple(b) not in used_variants[user_id]]
     if len(available) < 5:
-        used_variants[user_id] = set()
-        available = VS_POOL.copy()
+        # Сбрасываем только эту категорию
+        used_variants[user_id] = {v for v in used_variants[user_id]
+                                   if v not in [tuple(b) for b in all_battles]}
+        available = all_battles.copy()
 
-    variants = random.sample(available, 5)
+    variants = random.sample(available, min(5, len(available)))
     for v in variants:
-        used_variants[user_id].add(v)
+        used_variants[user_id].add(tuple(v))
     save_used_variants(used_variants)
 
-    await message.answer(f"Generating video with:\n" + "\n".join(f"* {v}" for v in variants))
-    await build_video_for_user(user_id, variants, message)
-
-
-@dp.message(F.text == "🎲 Выбрать темы вручную")
-async def manual_select(message: Message):
-    user_id = message.from_user.id
-    user_choices_manual = {}
-
-    if user_id not in used_variants:
-        used_variants[user_id] = set()
-
-    available = [v for v in VS_POOL if v not in used_variants[user_id]]
-    if len(available) < 5:
-        used_variants[user_id] = set()
-        available = VS_POOL.copy()
-
-    variants = random.sample(available, 5)
-
-    # Сохраняем варианты
-    if not hasattr(dp, '_manual_variants'):
-        dp._manual_variants = {}
-    dp._manual_variants[user_id] = {"options": variants, "selected": []}
-
-    for i, v in enumerate(variants, 1):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Use", callback_data=f"manual_use_{i}"),
-            InlineKeyboardButton(text="Skip", callback_data=f"manual_skip_{i}")
-        ]])
-        await message.answer(f"{i}. {v}", reply_markup=kb)
-
-
-@dp.callback_query(F.data.startswith("manual_use_"))
-async def manual_use(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    idx = int(callback.data.split("_")[2]) - 1
-
-    if not hasattr(dp, '_manual_variants') or user_id not in dp._manual_variants:
-        await callback.answer("Expired")
-        return
-
-    data = dp._manual_variants[user_id]
-    variant = data["options"][idx]
-    if variant not in data["selected"]:
-        data["selected"].append(variant)
-
-    count = len(data["selected"])
-    await callback.answer(f"Added {count}/5")
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-    if count == 5:
-        await callback.message.answer("5 selected! Building video...")
-        await build_video_for_user(user_id, data["selected"], callback.message)
-        del dp._manual_variants[user_id]
-
-
-@dp.callback_query(F.data.startswith("manual_skip_"))
-async def manual_skip(callback: CallbackQuery):
-    await callback.answer("Skipped")
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
+    await message.answer(
+        f"Category: {category_name}\n\n" +
+        "\n".join(f"* {l} VS {r}" for l, r in variants)
+    )
+    await build_video_for_user(user_id, category_name, variants, message)
 
 
 @dp.callback_query(F.data == "add_to_queue")
 async def add_to_queue(callback: CallbackQuery):
     user_id = callback.from_user.id
-
     if user_id not in pending_videos:
         await callback.answer("Video not found.")
         return
@@ -707,22 +771,17 @@ async def add_to_queue(callback: CallbackQuery):
         publish_queue[user_id] = []
 
     publish_queue[user_id].append({
-        "id": slot_id,
-        "hour_est": slot_hour,
-        "day": target_day,
-        "target_utc": target_utc
+        "id": slot_id, "hour_est": slot_hour,
+        "day": target_day, "target_utc": target_utc
     })
 
-    is_dst = 3 <= datetime.datetime.utcnow().month <= 11
     day_str = "Today" if target_day == datetime.datetime.utcnow().date() else "Tomorrow"
-
-    queue_text = f"Added to queue!\n{day_str} at {slot_hour}:00 EST\n\nFull queue:\n"
+    queue_text = f"Added to queue!\n{day_str} at {slot_hour}:00 EST\n\nQueue:\n"
     for i, s in enumerate(publish_queue[user_id], 1):
         d = "Today" if s["day"] == datetime.datetime.utcnow().date() else "Tomorrow"
         queue_text += f"{i}. {d} {s['hour_est']}:00 EST\n"
 
     await callback.message.answer(queue_text)
-
     asyncio.create_task(
         delayed_publish(user_id, slot_id, video_data, target_utc, callback.message)
     )
@@ -731,7 +790,6 @@ async def add_to_queue(callback: CallbackQuery):
 @dp.callback_query(F.data == "publish_now")
 async def publish_now(callback: CallbackQuery):
     user_id = callback.from_user.id
-
     if user_id not in pending_videos:
         await callback.answer("Video not found.")
         return
@@ -743,7 +801,6 @@ async def publish_now(callback: CallbackQuery):
         pass
 
     await callback.message.answer("Uploading to YouTube...")
-
     try:
         video_data = pending_videos.pop(user_id)
         url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
@@ -753,12 +810,7 @@ async def publish_now(callback: CallbackQuery):
         await callback.message.answer(f"Error: {e}")
 
 
-AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))  # твой Telegram user_id
-AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
-
-
 async def autopilot():
-    """Автопилот — генерирует и публикует 3 видео в день по расписанию EST."""
     if not AUTOPILOT_ENABLED or not AUTOPILOT_USER_ID:
         return
 
@@ -769,7 +821,6 @@ async def autopilot():
         is_dst = 3 <= now_utc.month <= 11
         utc_offset = 4 if is_dst else 5
 
-        # Ближайший слот
         next_target = None
         next_slot = None
 
@@ -789,38 +840,42 @@ async def autopilot():
 
         await asyncio.sleep(delay)
 
-        # Генерируем видео
         try:
             user_id = AUTOPILOT_USER_ID
+
+            # Выбираем случайную категорию
+            category_name = random.choice(CATEGORY_NAMES)
+            category = CATEGORIES[category_name]
+            all_battles = category["battles"]
 
             if user_id not in used_variants:
                 used_variants[user_id] = set()
 
-            available = [v for v in VS_POOL if v not in used_variants[user_id]]
+            available = [b for b in all_battles if tuple(b) not in used_variants[user_id]]
             if len(available) < 5:
-                used_variants[user_id] = set()
-                available = VS_POOL.copy()
+                used_variants[user_id] = {v for v in used_variants[user_id]
+                                           if v not in [tuple(b) for b in all_battles]}
+                available = all_battles.copy()
 
-            variants = random.sample(available, 5)
+            variants = random.sample(available, min(5, len(available)))
             for v in variants:
-                used_variants[user_id].add(v)
+                used_variants[user_id].add(tuple(v))
             save_used_variants(used_variants)
 
-            logger.info(f"Autopilot generating: {variants}")
-            await bot.send_message(user_id, f"Autopilot: generating {next_slot}:00 EST video...")
+            logger.info(f"Autopilot: {category_name} — {variants}")
+            await bot.send_message(user_id, f"Autopilot: {category_name}")
 
             tmp_dir = tempfile.mkdtemp()
             clip_paths = []
 
-            for idx, variant in enumerate(variants, start=1):
-                left_label, right_label = parse_vs(variant)
-                left_img = fetch_image(left_label)
-                right_img = fetch_image(right_label)
+            for idx, (left_label, right_label) in enumerate(variants, start=1):
+                left_img = fetch_image(left_label, category_name)
+                right_img = fetch_image(right_label, category_name)
                 clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
                 clip_paths.append(clip_path)
 
             final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
-            title, description = generate_metadata(variants)
+            title, description = generate_metadata(variants, category_name)
 
             url = upload_to_youtube(final_path, title, description)
             await bot.send_message(user_id, f"Autopilot published!\n{url}")
@@ -833,7 +888,7 @@ async def autopilot():
             except Exception:
                 pass
 
-        await asyncio.sleep(60)  # небольшая пауза чтобы не попасть в тот же слот
+        await asyncio.sleep(60)
 
 
 async def main():
