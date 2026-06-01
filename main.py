@@ -141,33 +141,38 @@ def parse_vs(variant):
     return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else ("Left", "Right")
 
 
-HF_TOKEN = os.getenv("HF_TOKEN", "")
-HF_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
 def fetch_image(query):
-    """Генерируем AI фото через HuggingFace, fallback на Pexels."""
+    """Генерируем AI фото через Gemini, fallback на Pexels."""
     logger.info(f"Generating image for: {query}")
     prompt = QUERY_MAP.get(query, query)
-    full_prompt = f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text"
+    full_prompt = f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text, no watermark"
 
-    # Пробуем HuggingFace
-    if HF_TOKEN:
+    # Пробуем Gemini
+    if GEMINI_API_KEY:
         try:
             session = get_session()
             r = session.post(
-                f"https://api-inference.huggingface.co/models/{HF_MODEL}",
-                headers={"Authorization": f"Bearer {HF_TOKEN}"},
-                json={"inputs": full_prompt, "parameters": {"width": 1024, "height": 1024}},
-                timeout=120
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key={GEMINI_API_KEY}",
+                json={
+                    "contents": [{"parts": [{"text": full_prompt}]}],
+                    "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]}
+                },
+                timeout=60
             )
-            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
-                logger.info(f"HF image generated for: {query}")
-                return Image.open(io.BytesIO(r.content)).convert("RGB")
-            else:
-                logger.warning(f"HF failed: {r.status_code} {r.text[:200]}")
+            if r.status_code == 200:
+                result = r.json()
+                for part in result.get("candidates", [{}])[0].get("content", {}).get("parts", []):
+                    if "inlineData" in part:
+                        import base64
+                        img_bytes = base64.b64decode(part["inlineData"]["data"])
+                        logger.info(f"Gemini image generated for: {query}")
+                        return Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            logger.warning(f"Gemini failed: {r.status_code} {r.text[:300]}")
         except Exception as e:
-            logger.warning(f"HF error for '{query}': {e}")
+            logger.warning(f"Gemini error for '{query}': {e}")
 
     # Fallback на Pexels
     logger.info(f"Falling back to Pexels for: {query}")
