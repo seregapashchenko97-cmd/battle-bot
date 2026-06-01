@@ -142,65 +142,8 @@ def parse_vs(variant):
 
 
 def fetch_image(query):
-    """Генерируем AI картинку через Replicate FLUX, fallback на Pexels."""
-    logger.info(f"Generating image for: {query}")
-
-    # Пробуем Replicate FLUX
-    if REPLICATE_API_KEY:
-        try:
-            prompt = f"{query}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, no text, no watermark"
-            session = get_session()
-
-            # Создаём prediction
-            r = session.post(
-                "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-                headers={
-                    "Authorization": f"Bearer {REPLICATE_API_KEY}",
-                    "Content-Type": "application/json",
-                    "Prefer": "wait"
-                },
-                json={
-                    "input": {
-                        "prompt": prompt,
-                        "width": 1080,
-                        "height": 960,
-                        "num_outputs": 1,
-                        "num_inference_steps": 4,
-                    }
-                },
-                timeout=60
-            )
-            r.raise_for_status()
-            result = r.json()
-
-            img_url = None
-            if result.get("output"):
-                img_url = result["output"][0]
-            elif result.get("urls", {}).get("get"):
-                # Polling если не готово
-                for _ in range(20):
-                    time.sleep(3)
-                    poll = session.get(
-                        result["urls"]["get"],
-                        headers={"Authorization": f"Bearer {REPLICATE_API_KEY}"},
-                        timeout=30
-                    )
-                    poll_data = poll.json()
-                    if poll_data.get("status") == "succeeded":
-                        img_url = poll_data["output"][0]
-                        break
-
-            if img_url:
-                img_r = session.get(img_url, timeout=30)
-                img_r.raise_for_status()
-                logger.info(f"Replicate image generated for: {query}")
-                return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-
-        except Exception as e:
-            logger.warning(f"Replicate failed for '{query}': {e}")
-
-    # Fallback на Pexels
-    logger.info(f"Falling back to Pexels for: {query}")
+    """Получаем фото с Pexels."""
+    logger.info(f"Fetching: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
     search_query = QUERY_MAP.get(query, query)
@@ -215,10 +158,10 @@ def fetch_image(query):
                 img_url = random.choice(photos)["src"]["large"]
                 img_r = session.get(img_url, timeout=20)
                 img_r.raise_for_status()
+                logger.info(f"Image fetched for: {query}")
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
             logger.warning(f"Pexels failed '{q}': {e}")
-
     return Image.new("RGB", (W, H // 2), (20, 20, 20))
 
 
