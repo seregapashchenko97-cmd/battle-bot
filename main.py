@@ -94,6 +94,7 @@ CATEGORIES = {
         "pexels": {"Truth": "truth light mirror honest face", "Kindness": "kindness help hand charity", "Revenge": "dark storm angry revenge shadow", "Forgiveness": "forgiveness light peace calm", "Logic": "chess strategy thinking mind", "Intuition": "intuition spiritual meditation soul", "Alpha": "alpha male confident strong leader", "Sigma": "lone wolf solitary alone dark forest", "Respected": "respected leader business podium", "Loved": "loved couple embrace romantic", "Die Famous": "celebrity famous spotlight crowd", "Live Unknown": "peaceful unknown quiet simple life", "Hard Truth": "mirror truth face honest reality", "Sweet Lie": "sweet smile fake mask illusion", "Short Pleasure": "party fun night pleasure enjoy", "Long Success": "success trophy achievement goal", "Passion": "passion fire intense emotion", "Stability": "stable home family secure", "Being Right": "arguing debate strong opinion", "Being Happy": "happy smile joy content"}
     },
 }
+CATEGORY_NAMES = list(CATEGORIES.keys())
 
 # --- НОВАЯ ФУНКЦИЯ fetch_image (Imagen 3) ---
 def fetch_image(query, category_name):
