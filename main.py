@@ -35,8 +35,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image")
+POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
@@ -380,65 +379,37 @@ def get_session():
     return session
 
 
-def fetch_image_gemini(prompt):
-    """Generate an image through Gemini. Returns PIL Image or None."""
-    if not GEMINI_API_KEY:
-        logger.info("GEMINI_API_KEY is empty, skipping Gemini")
-        return None
-
+def fetch_image_pollinations(prompt):
+    """Generate a free image through Pollinations. Returns PIL Image or None."""
     try:
         session = get_session()
         full_prompt = (
-            f"Create one wide 16:9 cinematic realistic image for this idea: {prompt}. "
-            "Dark moody atmosphere, dramatic lighting, professional photography, "
-            "high detail, sharp focus, no text, no captions, no watermark, no logo."
+            f"{prompt}, cinematic realistic photo, dark moody atmosphere, "
+            "dramatic lighting, professional photography, high detail, sharp focus, "
+            "no text, no captions, no watermark, no logo"
+        )
+        encoded_prompt = urllib.parse.quote(full_prompt)
+        url = (
+            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+            f"?width=1024&height=576&model={urllib.parse.quote(POLLINATIONS_MODEL)}"
+            "&nologo=true&private=true&enhance=true"
         )
 
-        r = session.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-            headers={
-                "x-goog-api-key": GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={
-                "contents": [{
-                    "parts": [{"text": full_prompt}]
-                }],
-                "generationConfig": {
-                    "responseModalities": ["IMAGE"],
-                    "imageConfig": {
-                        "aspectRatio": "16:9"
-                    }
-                }
-            },
+        r = session.get(
+            url,
+            headers={"Accept": "image/*"},
             timeout=120
         )
-        if not r.ok:
-            logger.warning(f"Gemini error body: {r.text[:1000]}")
         r.raise_for_status()
-        data = r.json()
+        content_type = r.headers.get("Content-Type", "")
+        if "image" not in content_type.lower():
+            logger.warning(f"Pollinations returned non-image response: {r.text[:300]}")
+            return None
 
-        candidates = data.get("candidates", [])
-        for candidate in candidates:
-            parts = candidate.get("content", {}).get("parts", [])
-            for part in parts:
-                inline_data = part.get("inlineData") or part.get("inline_data")
-                if not inline_data:
-                    continue
-
-                image_b64 = inline_data.get("data")
-                if not image_b64:
-                    continue
-
-                image_bytes = base64.b64decode(image_b64)
-                logger.info(f"Gemini image generated for: {prompt[:30]}")
-                return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-        logger.warning(f"Gemini returned no image for: {prompt}")
-        return None
-
+        logger.info(f"Pollinations image generated for: {prompt[:30]}")
+        return Image.open(io.BytesIO(r.content)).convert("RGB")
     except Exception as e:
-        logger.warning(f"Gemini failed: {e}")
+        logger.warning(f"Pollinations failed: {e}")
         return None
 
 
@@ -448,8 +419,8 @@ def fetch_image(query, category_name):
     pexels_map = category.get("pexels", {})
     search_query = pexels_map.get(query, f"{query} dramatic dark")
 
-    # First try Gemini image generation.
-    img = fetch_image_gemini(search_query)
+    # First try free AI generation through Pollinations.
+    img = fetch_image_pollinations(search_query)
     if img:
         return img
 
