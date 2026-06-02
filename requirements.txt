@@ -2,4 +2,4 @@ Pillow==10.3.0
 requests==2.32.3
 numpy==1.26.4
 aiogram==3.13.1
-google-generativeai
+google-genai
