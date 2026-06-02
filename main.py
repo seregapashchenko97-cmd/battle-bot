@@ -16,6 +16,8 @@ import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from google import genai
+from google.genai import types
 from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -41,6 +43,7 @@ YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 FAL_API_KEY = os.getenv("FAL_API_KEY", "")
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
@@ -380,15 +383,36 @@ def get_session():
 
 import google.generativeai as genai
 
+from google import genai
+from google.genai import types
+
+# Инициализация клиента (API-ключ берется из переменной окружения GEMINI_API_KEY)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
 def fetch_image(query, category_name):
+    logger.info(f"Generating image with Gemini Imagen 3 for: {query}")
     try:
-        # Убедитесь, что genai.configure(api_key=...) был вызван выше
-        imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
-        prompt = f"{query}, {category_name}, high quality, 9:16 aspect ratio"
-        result = imagen.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="9:16")
-        return Image.open(io.BytesIO(result.images[0]._pil_image.tobytes())).convert("RGB")
+        # Промпт для Imagen 3
+        prompt = f"{query}, {category_name}, cinematic, photorealistic, high quality, dark aesthetic"
+        
+        # Генерация изображения
+        response = client.models.generate_images(
+            model='imagen-3.0-generate-001',
+            prompt=prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="9:16",
+                output_mime_type="image/jpeg",
+            )
+        )
+        
+        # Сохранение и преобразование в формат PIL
+        for generated_image in response.generated_images:
+            image_bytes = generated_image.image.image_bytes
+            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            
     except Exception as e:
-        logger.error(f"Gemini error: {e}")
+        logger.error(f"Gemini API error: {e}")
         return Image.new("RGB", (720, 1280), (30, 30, 30))
 
     # Fallback на Pexels
