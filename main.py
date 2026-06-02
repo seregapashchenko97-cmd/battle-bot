@@ -40,6 +40,7 @@ YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
+FAL_API_KEY = os.getenv("FAL_API_KEY", "")
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
@@ -377,12 +378,50 @@ def get_session():
     return session
 
 
+def fetch_image_fal(prompt):
+    """Генерация через fal.ai FLUX."""
+    try:
+        session = get_session()
+        r = session.post(
+            "https://fal.run/fal-ai/flux/schnell",
+            headers={
+                "Authorization": f"Key {FAL_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "prompt": f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text",
+                "image_size": "landscape_4_3",
+                "num_inference_steps": 4,
+                "num_images": 1,
+            },
+            timeout=60
+        )
+        r.raise_for_status()
+        result = r.json()
+        img_url = result["images"][0]["url"]
+        img_r = session.get(img_url, timeout=30)
+        img_r.raise_for_status()
+        logger.info(f"FAL image generated for: {prompt[:30]}")
+        return Image.open(io.BytesIO(img_r.content)).convert("RGB")
+    except Exception as e:
+        logger.warning(f"FAL failed: {e}")
+        return None
+
+
 def fetch_image(query, category_name):
-    logger.info(f"Fetching: {query}")
+    logger.info(f"Generating: {query}")
     category = CATEGORIES.get(category_name, {})
     pexels_map = category.get("pexels", {})
     search_query = pexels_map.get(query, f"{query} dramatic dark")
 
+    # Пробуем fal.ai
+    if FAL_API_KEY:
+        img = fetch_image_fal(search_query)
+        if img:
+            return img
+
+    # Fallback на Pexels
+    logger.info(f"Falling back to Pexels for: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
 
@@ -398,7 +437,6 @@ def fetch_image(query, category_name):
                 img_url = photo["src"]["large2x"] if "large2x" in photo["src"] else photo["src"]["large"]
                 img_r = session.get(img_url, timeout=20)
                 img_r.raise_for_status()
-                logger.info(f"Image fetched for: {query}")
                 return Image.open(io.BytesIO(img_r.content)).convert("RGB")
         except Exception as e:
             logger.warning(f"Pexels failed '{q}': {e}")
