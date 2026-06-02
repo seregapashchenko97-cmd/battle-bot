@@ -266,6 +266,42 @@ CATEGORIES = {
             "Local Shop": "local market small business",
         }
     },
+    "👙 Girls Battle": {
+        "battles": [
+            ("Blonde", "Brunette"),
+            ("Fitness Girl", "Curvy Girl"),
+            ("Natural", "Makeup"),
+            ("Beach Body", "Gym Body"),
+            ("Tattoos", "Clean Skin"),
+            ("Short Hair", "Long Hair"),
+            ("Blue Eyes", "Brown Eyes"),
+            ("Casual Style", "Elegant Style"),
+            ("Tomboy", "Feminine"),
+            ("Summer Girl", "Winter Girl"),
+        ],
+        "pexels": {
+            "Blonde": "beautiful blonde woman portrait",
+            "Brunette": "beautiful brunette woman portrait",
+            "Fitness Girl": "fitness woman athlete workout",
+            "Curvy Girl": "confident curvy woman fashion",
+            "Natural": "natural beauty woman no makeup",
+            "Makeup": "glamour makeup woman beautiful",
+            "Beach Body": "woman beach summer ocean",
+            "Gym Body": "woman gym fitness strong",
+            "Tattoos": "woman tattoos alternative style",
+            "Clean Skin": "woman clean skin natural beauty",
+            "Short Hair": "woman short hair stylish portrait",
+            "Long Hair": "woman long hair beautiful portrait",
+            "Blue Eyes": "woman blue eyes close up",
+            "Brown Eyes": "woman brown eyes portrait",
+            "Casual Style": "woman casual fashion street style",
+            "Elegant Style": "woman elegant dress fashion",
+            "Tomboy": "woman tomboy sporty casual",
+            "Feminine": "woman feminine dress elegant",
+            "Summer Girl": "woman summer beach vacation",
+            "Winter Girl": "woman winter fashion snow",
+        }
+    },
     "🧠 Deep Questions": {
         "battles": [
             ("Truth", "Kindness"),
@@ -718,7 +754,7 @@ async def random_category(message: Message):
     await generate_from_category(message, category_name)
 
 
-@dp.message(lambda m: m.text in CATEGORY_NAMES)
+@dp.message(F.text.in_(set(CATEGORY_NAMES)))
 async def category_selected(message: Message):
     await generate_from_category(message, message.text)
 
