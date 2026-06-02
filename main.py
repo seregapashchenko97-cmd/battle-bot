@@ -383,7 +383,7 @@ def fetch_image_fal(prompt):
     try:
         session = get_session()
         r = session.post(
-            "https://fal.run/fal-ai/flux/schnell",
+            "https://fal-proxys.seregapashchenko97.workers.dev/",
             headers={
                 "Authorization": f"Key {FAL_API_KEY}",
                 "Content-Type": "application/json"
