@@ -16,8 +16,10 @@ import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# --- НОВЫЕ ИМПОРТЫ ---
 from google import genai
 from google.genai import types
+
 from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -35,14 +37,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+# PEXELS_API_KEY больше не нужен, мы используем Gemini
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
-FAL_API_KEY = os.getenv("FAL_API_KEY", "")
+
+# Инициализация клиента Gemini
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
@@ -55,347 +58,48 @@ W, H = 720, 1280
 QUEUE_SLOTS = [9, 15, 21]
 
 # ============================================================
-# ТЕМАТИЧЕСКИЕ КАТЕГОРИИ
+# ТЕМАТИЧЕСКИЕ КАТЕГОРИИ (ОСТАВЛЕНЫ БЕЗ ИЗМЕНЕНИЙ)
 # ============================================================
 CATEGORIES = {
     "💰 Money & Success": {
-        "battles": [
-            ("Money", "Love"),
-            ("Fame", "Happiness"),
-            ("Hustle", "Balance"),
-            ("Rich & Alone", "Poor & Together"),
-            ("Billionaire", "Rock Star"),
-            ("Work Hard", "Work Smart"),
-            ("Success", "Peace of Mind"),
-            ("Power", "Freedom"),
-            ("Ambition", "Loyalty"),
-            ("Career", "Family"),
-        ],
-        "pexels": {
-            "Money": "luxury money cash gold dark background cinematic",
-            "Love": "romantic couple love dark moody cinematic",
-            "Fame": "celebrity red carpet spotlight crowd dark",
-            "Happiness": "happy laughing friends joy",
-            "Hustle": "businessman working late night office dark",
-            "Balance": "yoga meditation peaceful nature",
-            "Rich & Alone": "luxury penthouse alone",
-            "Poor & Together": "friends together happy community",
-            "Billionaire": "luxury yacht private jet mansion dark",
-            "Rock Star": "rock concert stage performer",
-            "Work Hard": "working late night laptop grind",
-            "Work Smart": "smart strategy chess planning",
-            "Success": "winner trophy podium celebrate",
-            "Peace of Mind": "peaceful calm nature zen",
-            "Power": "strong leader confident",
-            "Freedom": "open road motorcycle freedom sky",
-            "Ambition": "skyscraper climbing top goal",
-            "Loyalty": "friendship trust handshake bond",
-            "Career": "corporate office career suit",
-            "Family": "family together home warm",
-        }
+        "battles": [("Money", "Love"), ("Fame", "Happiness"), ("Hustle", "Balance"), ("Rich & Alone", "Poor & Together"), ("Billionaire", "Rock Star"), ("Work Hard", "Work Smart"), ("Success", "Peace of Mind"), ("Power", "Freedom"), ("Ambition", "Loyalty"), ("Career", "Family")],
+        "pexels": {"Money": "luxury money cash gold dark background cinematic", "Love": "romantic couple love dark moody cinematic", "Fame": "celebrity red carpet spotlight crowd dark", "Happiness": "happy laughing friends joy", "Hustle": "businessman working late night office dark", "Balance": "yoga meditation peaceful nature", "Rich & Alone": "luxury penthouse alone", "Poor & Together": "friends together happy community", "Billionaire": "luxury yacht private jet mansion dark", "Rock Star": "rock concert stage performer", "Work Hard": "working late night laptop grind", "Work Smart": "smart strategy chess planning", "Success": "winner trophy podium celebrate", "Peace of Mind": "peaceful calm nature zen", "Power": "strong leader confident", "Freedom": "open road motorcycle freedom sky", "Ambition": "skyscraper climbing top goal", "Loyalty": "friendship trust handshake bond", "Career": "corporate office career suit", "Family": "family together home warm"}
     },
     "🚗 Cars & Luxury": {
-        "battles": [
-            ("Ferrari", "Lamborghini"),
-            ("Rolls Royce", "Bugatti"),
-            ("BMW", "Mercedes"),
-            ("Porsche", "Aston Martin"),
-            ("Tesla", "Ferrari"),
-            ("Sports Car", "SUV"),
-            ("Lamborghini Urus", "Porsche Cayenne"),
-            ("McLaren", "Ferrari"),
-            ("Bentley", "Rolls Royce"),
-            ("Corvette", "Mustang"),
-        ],
-        "pexels": {
-            "Ferrari": "red ferrari sports car dark background studio",
-            "Lamborghini": "lamborghini aventador dark background dramatic",
-            "Rolls Royce": "rolls royce luxury black car",
-            "Bugatti": "bugatti chiron supercar fast",
-            "BMW": "bmw m3 sports car",
-            "Mercedes": "mercedes amg luxury car",
-            "Porsche": "porsche 911 sports car",
-            "Aston Martin": "aston martin luxury british car",
-            "Tesla": "tesla electric car modern",
-            "Sports Car": "sports car racing track speed",
-            "SUV": "suv luxury offroad",
-            "Lamborghini Urus": "lamborghini urus suv",
-            "Porsche Cayenne": "porsche cayenne suv",
-            "McLaren": "mclaren supercar british",
-            "Bentley": "bentley luxury continental",
-            "Corvette": "corvette american muscle car",
-            "Mustang": "ford mustang muscle car",
-        }
+        "battles": [("Ferrari", "Lamborghini"), ("Rolls Royce", "Bugatti"), ("BMW", "Mercedes"), ("Porsche", "Aston Martin"), ("Tesla", "Ferrari"), ("Sports Car", "SUV"), ("Lamborghini Urus", "Porsche Cayenne"), ("McLaren", "Ferrari"), ("Bentley", "Rolls Royce"), ("Corvette", "Mustang")],
+        "pexels": {"Ferrari": "red ferrari sports car dark background studio", "Lamborghini": "lamborghini aventador dark background dramatic", "Rolls Royce": "rolls royce luxury black car", "Bugatti": "bugatti chiron supercar fast", "BMW": "bmw m3 sports car", "Mercedes": "mercedes amg luxury car", "Porsche": "porsche 911 sports car", "Aston Martin": "aston martin luxury british car", "Tesla": "tesla electric car modern", "Sports Car": "sports car racing track speed", "SUV": "suv luxury offroad", "Lamborghini Urus": "lamborghini urus suv", "Porsche Cayenne": "porsche cayenne suv", "McLaren": "mclaren supercar british", "Bentley": "bentley luxury continental", "Corvette": "corvette american muscle car", "Mustang": "ford mustang muscle car"}
     },
     "🍔 Food & Drink": {
-        "battles": [
-            ("Burger", "Pizza"),
-            ("Sushi", "Steak"),
-            ("Coffee", "Energy Drink"),
-            ("Tacos", "Burrito"),
-            ("Ramen", "Pasta"),
-            ("Fried Chicken", "Grilled Salmon"),
-            ("Cheesecake", "Chocolate Cake"),
-            ("Beer", "Whiskey"),
-            ("Chips", "Popcorn"),
-            ("Pancakes", "Waffles"),
-        ],
-        "pexels": {
-            "Burger": "gourmet burger dark background dramatic close up",
-            "Pizza": "pizza slice melting cheese dark moody close up",
-            "Sushi": "sushi rolls japanese food",
-            "Steak": "wagyu steak grilled dark background cinematic",
-            "Coffee": "espresso coffee dark moody cafe aesthetic",
-            "Energy Drink": "energy drink can neon dark",
-            "Tacos": "mexican tacos street food",
-            "Burrito": "burrito wrap mexican food",
-            "Ramen": "ramen noodles japanese broth",
-            "Pasta": "pasta italian food sauce",
-            "Fried Chicken": "fried chicken crispy golden",
-            "Grilled Salmon": "grilled salmon healthy food",
-            "Cheesecake": "cheesecake dessert slice",
-            "Chocolate Cake": "chocolate cake dessert dark",
-            "Beer": "beer glass pub cold",
-            "Whiskey": "whiskey glass dark bar",
-            "Chips": "chips snack bowl",
-            "Popcorn": "popcorn cinema movie",
-            "Pancakes": "pancakes stack maple syrup",
-            "Waffles": "waffles breakfast sweet",
-        }
+        "battles": [("Burger", "Pizza"), ("Sushi", "Steak"), ("Coffee", "Energy Drink"), ("Tacos", "Burrito"), ("Ramen", "Pasta"), ("Fried Chicken", "Grilled Salmon"), ("Cheesecake", "Chocolate Cake"), ("Beer", "Whiskey"), ("Chips", "Popcorn"), ("Pancakes", "Waffles")],
+        "pexels": {"Burger": "gourmet burger dark background dramatic close up", "Pizza": "pizza slice melting cheese dark moody close up", "Sushi": "sushi rolls japanese food", "Steak": "wagyu steak grilled dark background cinematic", "Coffee": "espresso coffee dark moody cafe aesthetic", "Energy Drink": "energy drink can neon dark", "Tacos": "mexican tacos street food", "Burrito": "burrito wrap mexican food", "Ramen": "ramen noodles japanese broth", "Pasta": "pasta italian food sauce", "Fried Chicken": "fried chicken crispy golden", "Grilled Salmon": "grilled salmon healthy food", "Cheesecake": "cheesecake dessert slice", "Chocolate Cake": "chocolate cake dessert dark", "Beer": "beer glass pub cold", "Whiskey": "whiskey glass dark bar", "Chips": "chips snack bowl", "Popcorn": "popcorn cinema movie", "Pancakes": "pancakes stack maple syrup", "Waffles": "waffles breakfast sweet"}
     },
     "🎵 Music & Entertainment": {
-        "battles": [
-            ("Hip Hop", "Rock"),
-            ("Drake", "Kendrick"),
-            ("Netflix", "Cinema"),
-            ("Vinyl", "Streaming"),
-            ("Concert", "Festival"),
-            ("Pop", "Jazz"),
-            ("Guitar", "Piano"),
-            ("Studio", "Live Performance"),
-            ("Headphones", "Speakers"),
-            ("Classical", "Electronic"),
-        ],
-        "pexels": {
-            "Hip Hop": "hip hop rapper microphone urban dark stage",
-            "Rock": "rock concert electric guitar dark stage dramatic",
-            "Drake": "rapper music stage microphone",
-            "Kendrick": "rapper performer stage lights",
-            "Netflix": "watching tv series couch night",
-            "Cinema": "movie theater cinema screen dark",
-            "Vinyl": "vinyl record player retro music",
-            "Streaming": "spotify music phone earphones",
-            "Concert": "music concert crowd lights stage",
-            "Festival": "music festival outdoor crowd",
-            "Pop": "pop music singer stage performance",
-            "Jazz": "jazz music saxophone dark bar",
-            "Guitar": "electric guitar music dark",
-            "Piano": "piano keys music performance",
-            "Studio": "recording studio music producer",
-            "Live Performance": "live music band stage",
-            "Headphones": "headphones music listening",
-            "Speakers": "speakers sound system music",
-            "Classical": "orchestra classical music concert",
-            "Electronic": "dj electronic music club",
-        }
+        "battles": [("Hip Hop", "Rock"), ("Drake", "Kendrick"), ("Netflix", "Cinema"), ("Vinyl", "Streaming"), ("Concert", "Festival"), ("Pop", "Jazz"), ("Guitar", "Piano"), ("Studio", "Live Performance"), ("Headphones", "Speakers"), ("Classical", "Electronic")],
+        "pexels": {"Hip Hop": "hip hop rapper microphone urban dark stage", "Rock": "rock concert electric guitar dark stage dramatic", "Drake": "rapper music stage microphone", "Kendrick": "rapper performer stage lights", "Netflix": "watching tv series couch night", "Cinema": "movie theater cinema screen dark", "Vinyl": "vinyl record player retro music", "Streaming": "spotify music phone earphones", "Concert": "music concert crowd lights stage", "Festival": "music festival outdoor crowd", "Pop": "pop music singer stage performance", "Jazz": "jazz music saxophone dark bar", "Guitar": "electric guitar music dark", "Piano": "piano keys music performance", "Studio": "recording studio music producer", "Live Performance": "live music band stage", "Headphones": "headphones music listening", "Speakers": "speakers sound system music", "Classical": "orchestra classical music concert", "Electronic": "dj electronic music club"}
     },
     "💪 Lifestyle & Fitness": {
-        "battles": [
-            ("Gym", "Home Workout"),
-            ("Running", "Swimming"),
-            ("Vegan", "Carnivore"),
-            ("Early Bird", "Night Owl"),
-            ("City Life", "Country Life"),
-            ("Solo Travel", "Group Travel"),
-            ("Beach", "Mountains"),
-            ("Meditation", "Gym"),
-            ("Minimalism", "Luxury"),
-            ("Cold Shower", "Hot Bath"),
-        ],
-        "pexels": {
-            "Gym": "bodybuilder gym dark dramatic workout pumping iron",
-            "Home Workout": "home workout exercise training",
-            "Running": "athlete running city marathon dramatic dark",
-            "Swimming": "swimming pool athlete water",
-            "Vegan": "vegan food healthy green vegetables",
-            "Carnivore": "steak meat protein diet",
-            "Early Bird": "sunrise morning coffee fresh",
-            "Night Owl": "night city dark working late",
-            "City Life": "city skyline urban life busy",
-            "Country Life": "countryside peaceful nature farm",
-            "Solo Travel": "solo traveler backpack adventure",
-            "Group Travel": "group friends travel adventure",
-            "Beach": "tropical beach ocean sunset",
-            "Mountains": "mountain peak snow adventure",
-            "Meditation": "meditation yoga peace mindfulness",
-            "Minimalism": "minimalist clean simple interior",
-            "Luxury": "luxury lifestyle expensive fashion",
-            "Cold Shower": "cold shower water refreshing",
-            "Hot Bath": "hot bath relaxing spa",
-        }
+        "battles": [("Gym", "Home Workout"), ("Running", "Swimming"), ("Vegan", "Carnivore"), ("Early Bird", "Night Owl"), ("City Life", "Country Life"), ("Solo Travel", "Group Travel"), ("Beach", "Mountains"), ("Meditation", "Gym"), ("Minimalism", "Luxury"), ("Cold Shower", "Hot Bath")],
+        "pexels": {"Gym": "bodybuilder gym dark dramatic workout pumping iron", "Home Workout": "home workout exercise training", "Running": "athlete running city marathon dramatic dark", "Swimming": "swimming pool athlete water", "Vegan": "vegan food healthy green vegetables", "Carnivore": "steak meat protein diet", "Early Bird": "sunrise morning coffee fresh", "Night Owl": "night city dark working late", "City Life": "city skyline urban life busy", "Country Life": "countryside peaceful nature farm", "Solo Travel": "solo traveler backpack adventure", "Group Travel": "group friends travel adventure", "Beach": "tropical beach ocean sunset", "Mountains": "mountain peak snow adventure", "Meditation": "meditation yoga peace mindfulness", "Minimalism": "minimalist clean simple interior", "Luxury": "luxury lifestyle expensive fashion", "Cold Shower": "cold shower water refreshing", "Hot Bath": "hot bath relaxing spa"}
     },
     "📱 Tech & Brands": {
-        "battles": [
-            ("iPhone", "Android"),
-            ("Nike", "Adidas"),
-            ("PlayStation", "Xbox"),
-            ("Mac", "PC"),
-            ("Instagram", "TikTok"),
-            ("Apple Watch", "Rolex"),
-            ("Google", "Apple"),
-            ("YouTube", "Netflix"),
-            ("Uber", "Taxi"),
-            ("Amazon", "Local Shop"),
-        ],
-        "pexels": {
-            "iPhone": "iphone pro dark background studio minimal",
-            "Android": "samsung android smartphone",
-            "Nike": "nike air jordan sneakers dark background studio",
-            "Adidas": "adidas sneakers shoes sport",
-            "PlayStation": "playstation gaming console controller",
-            "Xbox": "xbox gaming controller",
-            "Mac": "macbook apple laptop",
-            "PC": "gaming pc desktop setup",
-            "Instagram": "instagram phone social media",
-            "TikTok": "tiktok phone social media video",
-            "Apple Watch": "apple watch smartwatch tech",
-            "Rolex": "rolex gold watch dark background luxury closeup",
-            "Google": "google tech modern office",
-            "Apple": "apple logo tech modern",
-            "YouTube": "youtube watching video phone",
-            "Netflix": "netflix streaming tv series",
-            "Uber": "uber ride car city",
-            "Taxi": "taxi cab yellow city",
-            "Amazon": "amazon package delivery shopping",
-            "Local Shop": "local market small business",
-        }
+        "battles": [("iPhone", "Android"), ("Nike", "Adidas"), ("PlayStation", "Xbox"), ("Mac", "PC"), ("Instagram", "TikTok"), ("Apple Watch", "Rolex"), ("Google", "Apple"), ("YouTube", "Netflix"), ("Uber", "Taxi"), ("Amazon", "Local Shop")],
+        "pexels": {"iPhone": "iphone pro dark background studio minimal", "Android": "samsung android smartphone", "Nike": "nike air jordan sneakers dark background studio", "Adidas": "adidas sneakers shoes sport", "PlayStation": "playstation gaming console controller", "Xbox": "xbox gaming controller", "Mac": "macbook apple laptop", "PC": "gaming pc desktop setup", "Instagram": "instagram phone social media", "TikTok": "tiktok phone social media video", "Apple Watch": "apple watch smartwatch tech", "Rolex": "rolex gold watch dark background luxury closeup", "Google": "google tech modern office", "Apple": "apple logo tech modern", "YouTube": "youtube watching video phone", "Netflix": "netflix streaming tv series", "Uber": "uber ride car city", "Taxi": "taxi cab yellow city", "Amazon": "amazon package delivery shopping", "Local Shop": "local market small business"}
     },
     "👙 Girls Battle": {
-        "battles": [
-            ("Blonde", "Brunette"),
-            ("Fitness Girl", "Curvy Girl"),
-            ("Natural Beauty", "Full Makeup"),
-            ("Beach Girl", "Gym Girl"),
-            ("Tattoo Girl", "Clean Look"),
-            ("Short Hair", "Long Hair"),
-            ("Blue Eyes", "Brown Eyes"),
-            ("Street Style", "Elegant Look"),
-            ("Sporty Girl", "Girly Girl"),
-            ("Summer Vibe", "Winter Vibe"),
-        ],
-        "pexels": {
-            "Blonde": "blonde model studio portrait dark background",
-            "Brunette": "brunette model studio portrait dark background",
-            "Fitness Girl": "fitness model athletic woman sport dark",
-            "Curvy Girl": "curvy woman confident fashion model",
-            "Natural Beauty": "natural woman no makeup fresh skin portrait",
-            "Full Makeup": "woman glamour makeup red lips portrait",
-            "Beach Girl": "woman bikini beach ocean summer",
-            "Gym Girl": "woman gym workout strong fitness dark",
-            "Tattoo Girl": "woman tattoos dark alternative model",
-            "Clean Look": "woman clean elegant fashion model",
-            "Short Hair": "woman short hair model fashion portrait",
-            "Long Hair": "woman long hair flowing model beautiful",
-            "Blue Eyes": "woman blue eyes portrait close up studio",
-            "Brown Eyes": "woman brown eyes portrait dark studio",
-            "Street Style": "woman street fashion urban style",
-            "Elegant Look": "woman elegant dress luxury fashion",
-            "Sporty Girl": "woman sporty athletic casual outdoor",
-            "Girly Girl": "woman feminine pink elegant dress",
-            "Summer Vibe": "woman summer tropical beach vibes",
-            "Winter Vibe": "woman winter fashion snow cozy",
-        }
+        "battles": [("Blonde", "Brunette"), ("Fitness Girl", "Curvy Girl"), ("Natural Beauty", "Full Makeup"), ("Beach Girl", "Gym Girl"), ("Tattoo Girl", "Clean Look"), ("Short Hair", "Long Hair"), ("Blue Eyes", "Brown Eyes"), ("Street Style", "Elegant Look"), ("Sporty Girl", "Girly Girl"), ("Summer Vibe", "Winter Vibe")],
+        "pexels": {"Blonde": "blonde model studio portrait dark background", "Brunette": "brunette model studio portrait dark background", "Fitness Girl": "fitness model athletic woman sport dark", "Curvy Girl": "curvy woman confident fashion model", "Natural Beauty": "natural woman no makeup fresh skin portrait", "Full Makeup": "woman glamour makeup red lips portrait", "Beach Girl": "woman bikini beach ocean summer", "Gym Girl": "woman gym workout strong fitness dark", "Tattoo Girl": "woman tattoos dark alternative model", "Clean Look": "woman clean elegant fashion model", "Short Hair": "woman short hair model fashion portrait", "Long Hair": "woman long hair flowing model beautiful", "Blue Eyes": "woman blue eyes portrait close up studio", "Brown Eyes": "woman brown eyes portrait dark studio", "Street Style": "woman street fashion urban style", "Elegant Look": "woman elegant dress luxury fashion", "Sporty Girl": "woman sporty athletic casual outdoor", "Girly Girl": "woman feminine pink elegant dress", "Summer Vibe": "woman summer tropical beach vibes", "Winter Vibe": "woman winter fashion snow cozy"}
     },
     "🧠 Deep Questions": {
-        "battles": [
-            ("Truth", "Kindness"),
-            ("Revenge", "Forgiveness"),
-            ("Logic", "Intuition"),
-            ("Alpha", "Sigma"),
-            ("Respected", "Loved"),
-            ("Die Famous", "Live Unknown"),
-            ("Hard Truth", "Sweet Lie"),
-            ("Short Pleasure", "Long Success"),
-            ("Passion", "Stability"),
-            ("Being Right", "Being Happy"),
-        ],
-        "pexels": {
-            "Truth": "truth light mirror honest face",
-            "Kindness": "kindness help hand charity",
-            "Revenge": "dark storm angry revenge shadow",
-            "Forgiveness": "forgiveness light peace calm",
-            "Logic": "chess strategy thinking mind",
-            "Intuition": "intuition spiritual meditation soul",
-            "Alpha": "alpha male confident strong leader",
-            "Sigma": "lone wolf solitary alone dark forest",
-            "Respected": "respected leader business podium",
-            "Loved": "loved couple embrace romantic",
-            "Die Famous": "celebrity famous spotlight crowd",
-            "Live Unknown": "peaceful unknown quiet simple life",
-            "Hard Truth": "mirror truth face honest reality",
-            "Sweet Lie": "sweet smile fake mask illusion",
-            "Short Pleasure": "party fun night pleasure enjoy",
-            "Long Success": "success trophy achievement goal",
-            "Passion": "passion fire intense emotion",
-            "Stability": "stable home family secure",
-            "Being Right": "arguing debate strong opinion",
-            "Being Happy": "happy smile joy content",
-        }
+        "battles": [("Truth", "Kindness"), ("Revenge", "Forgiveness"), ("Logic", "Intuition"), ("Alpha", "Sigma"), ("Respected", "Loved"), ("Die Famous", "Live Unknown"), ("Hard Truth", "Sweet Lie"), ("Short Pleasure", "Long Success"), ("Passion", "Stability"), ("Being Right", "Being Happy")],
+        "pexels": {"Truth": "truth light mirror honest face", "Kindness": "kindness help hand charity", "Revenge": "dark storm angry revenge shadow", "Forgiveness": "forgiveness light peace calm", "Logic": "chess strategy thinking mind", "Intuition": "intuition spiritual meditation soul", "Alpha": "alpha male confident strong leader", "Sigma": "lone wolf solitary alone dark forest", "Respected": "respected leader business podium", "Loved": "loved couple embrace romantic", "Die Famous": "celebrity famous spotlight crowd", "Live Unknown": "peaceful unknown quiet simple life", "Hard Truth": "mirror truth face honest reality", "Sweet Lie": "sweet smile fake mask illusion", "Short Pleasure": "party fun night pleasure enjoy", "Long Success": "success trophy achievement goal", "Passion": "passion fire intense emotion", "Stability": "stable home family secure", "Being Right": "arguing debate strong opinion", "Being Happy": "happy smile joy content"}
     },
 }
 
-# Список категорий для кнопок
-CATEGORY_NAMES = list(CATEGORIES.keys())
-
-# Хранилища
-pending_videos = {}
-publish_queue = {}
-USED_VARIANTS_FILE = "/tmp/used_variants.json"
-user_category = {}  # текущая категория пользователя
-
-
-def load_used_variants():
-    try:
-        with open(USED_VARIANTS_FILE, "r") as f:
-            data = json.load(f)
-            return {int(k): set(tuple(v) for v in vals) for k, vals in data.items()}
-    except Exception:
-        return {}
-
-
-def save_used_variants(used):
-    try:
-        with open(USED_VARIANTS_FILE, "w") as f:
-            json.dump({str(k): [list(v) for v in vals] for k, vals in used.items()}, f)
-    except Exception:
-        pass
-
-
-used_variants = load_used_variants()
-
-
-def get_session():
-    session = requests.Session()
-    retry = Retry(total=2, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    return session
-
-
-import google.generativeai as genai
-
-from google import genai
-from google.genai import types
-
-# Инициализация клиента (API-ключ берется из переменной окружения GEMINI_API_KEY)
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
+# --- НОВАЯ ФУНКЦИЯ fetch_image (Imagen 3) ---
 def fetch_image(query, category_name):
-    logger.info(f"Generating image with Gemini Imagen 3 for: {query}")
+    logger.info(f"Generating image with Gemini: {query}")
     try:
-        # Промпт для Imagen 3
-        prompt = f"{query}, {category_name}, cinematic, photorealistic, high quality, dark aesthetic"
-        
-        # Генерация изображения
+        prompt = f"{query}, {category_name}, cinematic, photorealistic, high quality, dark aesthetic, 9:16 aspect ratio"
         response = client.models.generate_images(
             model='imagen-3.0-generate-001',
             prompt=prompt,
@@ -405,38 +109,12 @@ def fetch_image(query, category_name):
                 output_mime_type="image/jpeg",
             )
         )
-        
-        # Сохранение и преобразование в формат PIL
-        for generated_image in response.generated_images:
-            image_bytes = generated_image.image.image_bytes
-            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            
+        for gen_img in response.generated_images:
+            return Image.open(io.BytesIO(gen_img.image.image_bytes)).convert("RGB")
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         return Image.new("RGB", (720, 1280), (30, 30, 30))
 
-    # Fallback на Pexels
-    logger.info(f"Falling back to Pexels for: {query}")
-    session = get_session()
-    headers = {"Authorization": PEXELS_API_KEY}
-
-    for q in [search_query, query, "dramatic dark cinematic"]:
-        try:
-            r = session.get("https://api.pexels.com/v1/search",
-                           params={"query": q, "per_page": 20, "orientation": "landscape"},
-                           headers=headers, timeout=20)
-            r.raise_for_status()
-            photos = r.json().get("photos", [])
-            if photos:
-                photo = random.choice(photos)
-                img_url = photo["src"]["large2x"] if "large2x" in photo["src"] else photo["src"]["large"]
-                img_r = session.get(img_url, timeout=20)
-                img_r.raise_for_status()
-                return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-        except Exception as e:
-            logger.warning(f"Pexels failed '{q}': {e}")
-
-    return Image.new("RGB", (W, H // 2), (20, 20, 20))
 
 
 def fit_image(im, w, h):
