@@ -1,5 +1,5 @@
-Pillow==10.3.0
-requests==2.32.3
-numpy==1.26.4
 aiogram==3.13.1
+Pillow==10.3.0
+numpy==1.26.4
+requests==2.32.3
 google-genai
