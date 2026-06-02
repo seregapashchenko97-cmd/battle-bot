@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-image")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
@@ -395,7 +395,7 @@ def fetch_image_gemini(prompt):
         )
 
         r = session.post(
-            f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
             headers={
                 "x-goog-api-key": GEMINI_API_KEY,
                 "Content-Type": "application/json",
@@ -405,11 +405,16 @@ def fetch_image_gemini(prompt):
                     "parts": [{"text": full_prompt}]
                 }],
                 "generationConfig": {
-                    "responseModalities": ["Image"]
+                    "responseModalities": ["IMAGE"],
+                    "imageConfig": {
+                        "aspectRatio": "16:9"
+                    }
                 }
             },
             timeout=120
         )
+        if not r.ok:
+            logger.warning(f"Gemini error body: {r.text[:1000]}")
         r.raise_for_status()
         data = r.json()
 
