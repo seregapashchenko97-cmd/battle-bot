@@ -1,6 +1,5 @@
 import asyncio
 import random
-import base64
 import io
 import os
 import re
@@ -35,14 +34,13 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux")
-POLLINATIONS_TIMEOUT = int(os.getenv("POLLINATIONS_TIMEOUT", "35"))
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
+FAL_API_KEY = os.getenv("FAL_API_KEY", "")
 
 bot = Bot(BOT_TOKEN, request_timeout=120)
 dp = Dispatcher()
@@ -54,10 +52,10 @@ W, H = 720, 1280
 QUEUE_SLOTS = [9, 15, 21]
 
 # ============================================================
-# РўР•РњРђРўРР§Р•РЎРљРР• РљРђРўР•Р“РћР РР
+# ТЕМАТИЧЕСКИЕ КАТЕГОРИИ
 # ============================================================
 CATEGORIES = {
-    "рџ’° Money & Success": {
+    "💰 Money & Success": {
         "battles": [
             ("Money", "Love"),
             ("Fame", "Happiness"),
@@ -93,7 +91,7 @@ CATEGORIES = {
             "Family": "family together home warm",
         }
     },
-    "рџљ— Cars & Luxury": {
+    "🚗 Cars & Luxury": {
         "battles": [
             ("Ferrari", "Lamborghini"),
             ("Rolls Royce", "Bugatti"),
@@ -126,7 +124,7 @@ CATEGORIES = {
             "Mustang": "ford mustang muscle car",
         }
     },
-    "рџЌ” Food & Drink": {
+    "🍔 Food & Drink": {
         "battles": [
             ("Burger", "Pizza"),
             ("Sushi", "Steak"),
@@ -162,7 +160,7 @@ CATEGORIES = {
             "Waffles": "waffles breakfast sweet",
         }
     },
-    "рџЋµ Music & Entertainment": {
+    "🎵 Music & Entertainment": {
         "battles": [
             ("Hip Hop", "Rock"),
             ("Drake", "Kendrick"),
@@ -198,7 +196,7 @@ CATEGORIES = {
             "Electronic": "dj electronic music club",
         }
     },
-    "рџ’Є Lifestyle & Fitness": {
+    "💪 Lifestyle & Fitness": {
         "battles": [
             ("Gym", "Home Workout"),
             ("Running", "Swimming"),
@@ -233,7 +231,7 @@ CATEGORIES = {
             "Hot Bath": "hot bath relaxing spa",
         }
     },
-    "рџ“± Tech & Brands": {
+    "📱 Tech & Brands": {
         "battles": [
             ("iPhone", "Android"),
             ("Nike", "Adidas"),
@@ -269,7 +267,7 @@ CATEGORIES = {
             "Local Shop": "local market small business",
         }
     },
-    "рџ‘™ Girls Battle": {
+    "👙 Girls Battle": {
         "battles": [
             ("Blonde", "Brunette"),
             ("Fitness Girl", "Curvy Girl"),
@@ -305,7 +303,7 @@ CATEGORIES = {
             "Winter Vibe": "woman winter fashion snow cozy",
         }
     },
-    "рџ§  Deep Questions": {
+    "🧠 Deep Questions": {
         "battles": [
             ("Truth", "Kindness"),
             ("Revenge", "Forgiveness"),
@@ -343,168 +341,14 @@ CATEGORIES = {
     },
 }
 
-CATEGORIES["🌍 Места & Путешествия"] = {
-    "battles": [
-        ("Dubai", "Miami"),
-        ("New York", "Los Angeles"),
-        ("Paris", "Rome"),
-        ("Bali", "Maldives"),
-        ("Tokyo", "Seoul"),
-        ("Las Vegas", "Ibiza"),
-        ("Santorini", "Capri"),
-        ("London", "Barcelona"),
-        ("Hawaii", "Bahamas"),
-        ("Monaco", "Singapore"),
-        ("Thailand", "Mexico"),
-        ("Amsterdam", "Berlin"),
-        ("Iceland", "Switzerland"),
-        ("Rio", "Cancun"),
-        ("Sydney", "Melbourne"),
-        ("Marrakech", "Istanbul"),
-        ("Mykonos", "Tulum"),
-        ("Aspen", "Lake Como"),
-        ("Hong Kong", "Shanghai"),
-        ("Cape Town", "Lisbon"),
-    ],
-    "pexels": {
-        "Dubai": "Dubai luxury skyline bright sunny beach supercars",
-        "Miami": "Miami beach neon nightlife palm trees bright",
-        "New York": "New York city skyline Times Square bright lights",
-        "Los Angeles": "Los Angeles Hollywood sunset palm trees luxury",
-        "Paris": "Paris Eiffel Tower romantic bright cinematic",
-        "Rome": "Rome Italy colosseum sunset travel cinematic",
-        "Bali": "Bali tropical villa jungle beach bright",
-        "Maldives": "Maldives overwater villa turquoise ocean bright",
-        "Tokyo": "Tokyo neon city street vibrant night",
-        "Seoul": "Seoul city neon kpop street vibrant",
-        "Las Vegas": "Las Vegas strip neon party bright",
-        "Ibiza": "Ibiza beach party sunset luxury",
-        "Santorini": "Santorini Greece white houses blue sea bright",
-        "Capri": "Capri Italy luxury coast bright blue water",
-        "London": "London city landmarks bright travel",
-        "Barcelona": "Barcelona beach city sunny travel",
-        "Hawaii": "Hawaii tropical beach volcano bright",
-        "Bahamas": "Bahamas turquoise water tropical beach",
-        "Monaco": "Monaco luxury yachts casino bright",
-        "Singapore": "Singapore skyline marina bay bright",
-        "Thailand": "Thailand island beach tropical bright",
-        "Mexico": "Mexico resort beach colorful travel",
-        "Amsterdam": "Amsterdam canals colorful city bright",
-        "Berlin": "Berlin city nightlife bright street",
-        "Iceland": "Iceland waterfall northern lights epic",
-        "Switzerland": "Switzerland alpine mountains luxury bright",
-        "Rio": "Rio de Janeiro beach carnival bright",
-        "Cancun": "Cancun resort beach turquoise water",
-        "Sydney": "Sydney opera house harbor bright",
-        "Melbourne": "Melbourne city street art bright",
-        "Marrakech": "Marrakech market colorful luxury travel",
-        "Istanbul": "Istanbul mosque city sunset travel",
-        "Mykonos": "Mykonos Greece beach party bright",
-        "Tulum": "Tulum Mexico beach jungle luxury",
-        "Aspen": "Aspen luxury ski resort sunny snow",
-        "Lake Como": "Lake Como Italy luxury villa bright",
-        "Hong Kong": "Hong Kong skyline neon harbor bright",
-        "Shanghai": "Shanghai skyline neon futuristic bright",
-        "Cape Town": "Cape Town beach mountain bright travel",
-        "Lisbon": "Lisbon Portugal colorful streets ocean bright",
-    }
-}
-
-CATEGORY_EXTRAS = {
-    0: [
-        ("Private Jet", "Super Yacht"), ("CEO Life", "Creator Life"),
-        ("Luxury Watch", "Sports Car"), ("Penthouse", "Beach Villa"),
-        ("Gold Card", "Crypto Wallet"), ("Startup", "Real Estate"),
-        ("Passive Income", "Dream Job"), ("Millionaire", "Influencer"),
-        ("Big City", "Island Life"), ("Shopping Spree", "Early Retirement"),
-    ],
-    1: [
-        ("G-Wagon", "Range Rover"), ("Cybertruck", "Hummer EV"),
-        ("Ferrari Roma", "Porsche GT3"), ("Lambo Huracan", "McLaren 720S"),
-        ("Classic Mustang", "Dodge Charger"), ("Maybach", "Bentley GT"),
-        ("Superbike", "Supercar"), ("JDM", "German Cars"),
-        ("Offroad Jeep", "Luxury Sedan"), ("Drift Car", "Drag Car"),
-    ],
-    2: [
-        ("Ice Cream", "Donuts"), ("Smoothie", "Milkshake"),
-        ("Lobster", "Caviar"), ("BBQ Ribs", "Fried Wings"),
-        ("Croissant", "Bagel"), ("Boba Tea", "Lemonade"),
-        ("Nachos", "Mozzarella Sticks"), ("Poke Bowl", "Caesar Salad"),
-        ("Hot Dog", "Chicken Sandwich"), ("Tiramisu", "Brownie"),
-    ],
-    3: [
-        ("DJ Set", "Live Band"), ("Grammy", "Oscar"),
-        ("Comedy Show", "Horror Movie"), ("K-Pop", "Latin Music"),
-        ("VIP Club", "House Party"), ("Podcast", "Reality Show"),
-        ("Rap Battle", "Dance Battle"), ("Music Video", "Movie Trailer"),
-        ("Karaoke", "Open Mic"), ("Backstage Pass", "Front Row"),
-    ],
-    4: [
-        ("Six Pack", "Big Arms"), ("Yoga", "CrossFit"),
-        ("Protein Shake", "Green Juice"), ("Sauna", "Ice Bath"),
-        ("Luxury Hotel", "Camping"), ("Road Trip", "Cruise"),
-        ("Morning Run", "Midnight Walk"), ("Spa Day", "Leg Day"),
-        ("Surfing", "Snowboarding"), ("Streetwear", "Old Money Style"),
-    ],
-    5: [
-        ("AirPods", "Beats"), ("iPad", "Gaming Laptop"),
-        ("VR Headset", "Drone"), ("Netflix", "Disney Plus"),
-        ("Tesla", "Rivian"), ("ChatGPT", "Gemini"),
-        ("Sneakers", "Smartwatch"), ("GoPro", "iPhone Camera"),
-        ("TikTok Fame", "YouTube Fame"), ("Amazon Prime", "Apple Store"),
-    ],
-    6: [
-        ("Red Dress", "Black Dress"), ("Beach Look", "City Look"),
-        ("Luxury Girl", "Sporty Girl"), ("Curly Hair", "Straight Hair"),
-        ("Blue Bikini", "Red Bikini"), ("Fashion Model", "Fitness Model"),
-        ("Soft Glam", "Bold Glam"), ("Summer Tan", "Snow Queen"),
-        ("High Heels", "Sneakers"), ("Angel Look", "Baddie Look"),
-    ],
-    7: [
-        ("Risk", "Comfort"), ("Dreams", "Reality"),
-        ("Money First", "Love First"), ("Silence", "Truth"),
-        ("Past", "Future"), ("Famous Friend", "Loyal Friend"),
-        ("One Chance", "Second Chance"), ("Fast Win", "Slow Growth"),
-        ("Big Ego", "Big Heart"), ("Wild Life", "Peaceful Life"),
-    ],
-}
-
-for index, category_name in enumerate(list(CATEGORIES.keys())):
-    extras = CATEGORY_EXTRAS.get(index, [])
-    CATEGORIES[category_name]["battles"].extend(extras)
-    pexels_map = CATEGORIES[category_name].setdefault("pexels", {})
-    for left, right in extras:
-        pexels_map.setdefault(left, f"{left} bright colorful viral cinematic photo")
-        pexels_map.setdefault(right, f"{right} bright colorful viral cinematic photo")
-
+# Список категорий для кнопок
 CATEGORY_NAMES = list(CATEGORIES.keys())
-CATEGORY_DISPLAY = {
-    CATEGORY_NAMES[0]: "💰 Деньги и успех",
-    CATEGORY_NAMES[1]: "🚗 Машины и люкс",
-    CATEGORY_NAMES[2]: "🍔 Еда и напитки",
-    CATEGORY_NAMES[3]: "🎵 Музыка и шоу",
-    CATEGORY_NAMES[4]: "💪 Лайфстайл и фитнес",
-    CATEGORY_NAMES[5]: "📱 Техника и бренды",
-    CATEGORY_NAMES[6]: "💃 Девушки баттл",
-    CATEGORY_NAMES[7]: "🧠 Глубокие вопросы",
-    CATEGORY_NAMES[8]: "🌍 Места и путешествия",
-}
-DISPLAY_TO_CATEGORY = {v: k for k, v in CATEGORY_DISPLAY.items()}
-RANDOM_CATEGORY_TEXT = "🎲 Случайная категория"
 
-
-def category_title(category_name):
-    return CATEGORY_DISPLAY.get(category_name, category_name)
-
-
-def normalize_battle(battle):
-    return tuple(sorted([battle[0], battle[1]]))
-
-# РҐСЂР°РЅРёР»РёС‰Р°
+# Хранилища
 pending_videos = {}
 publish_queue = {}
 USED_VARIANTS_FILE = "/tmp/used_variants.json"
-user_category = {}  # С‚РµРєСѓС‰Р°СЏ РєР°С‚РµРіРѕСЂРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+user_category = {}  # текущая категория пользователя
 
 
 def load_used_variants():
@@ -534,38 +378,33 @@ def get_session():
     return session
 
 
-def fetch_image_pollinations(prompt):
-    """Generate a free image through Pollinations. Returns PIL Image or None."""
+def fetch_image_fal(prompt):
+    """Генерация через fal.ai FLUX."""
     try:
         session = get_session()
-        full_prompt = (
-            f"{prompt}, bright colorful viral TikTok style image, glossy luxury look, "
-            "sunny vibrant lighting, high contrast, saturated colors, energetic mood, "
-            "professional commercial photography, sharp focus, clean background, "
-            "beautiful composition, no text, no captions, no watermark, no logo"
-        )
-        encoded_prompt = urllib.parse.quote(full_prompt)
-        url = (
-            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width=1024&height=576&model={urllib.parse.quote(POLLINATIONS_MODEL)}"
-            "&nologo=true&private=true&enhance=true"
-        )
-
-        r = session.get(
-            url,
-            headers={"Accept": "image/*"},
-            timeout=POLLINATIONS_TIMEOUT
+        r = session.post(
+            "https://fal.run/fal-ai/flux/schnell",
+            headers={
+                "Authorization": f"Key {FAL_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "prompt": f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text",
+                "image_size": "landscape_4_3",
+                "num_inference_steps": 4,
+                "num_images": 1,
+            },
+            timeout=60
         )
         r.raise_for_status()
-        content_type = r.headers.get("Content-Type", "")
-        if "image" not in content_type.lower():
-            logger.warning(f"Pollinations returned non-image response: {r.text[:300]}")
-            return None
-
-        logger.info(f"Pollinations image generated for: {prompt[:30]}")
-        return Image.open(io.BytesIO(r.content)).convert("RGB")
+        result = r.json()
+        img_url = result["images"][0]["url"]
+        img_r = session.get(img_url, timeout=30)
+        img_r.raise_for_status()
+        logger.info(f"FAL image generated for: {prompt[:30]}")
+        return Image.open(io.BytesIO(img_r.content)).convert("RGB")
     except Exception as e:
-        logger.warning(f"Pollinations failed: {e}")
+        logger.warning(f"FAL failed: {e}")
         return None
 
 
@@ -574,14 +413,14 @@ def fetch_image(query, category_name):
     category = CATEGORIES.get(category_name, {})
     pexels_map = category.get("pexels", {})
     search_query = pexels_map.get(query, f"{query} dramatic dark")
-    search_query = f"{search_query} bright colorful vibrant high energy"
 
-    # First try free AI generation through Pollinations.
-    img = fetch_image_pollinations(search_query)
-    if img:
-        return img
+    # Пробуем fal.ai
+    if FAL_API_KEY:
+        img = fetch_image_fal(search_query)
+        if img:
+            return img
 
-    # Fallback to Pexels if Gemini is unavailable or failed.
+    # Fallback на Pexels
     logger.info(f"Falling back to Pexels for: {query}")
     session = get_session()
     headers = {"Authorization": PEXELS_API_KEY}
@@ -665,12 +504,25 @@ def build_frame(left_label, right_label, left_img, right_img,
                   stroke_width=3, stroke_fill=(0, 0, 0))
 
     if not show_result:
-        draw.text((20, HALF - 145), "[ LIKE ]", font=font_cta,
-                  fill=(255, 255, 0), anchor="lt",
-                  stroke_width=2, stroke_fill=(0, 0, 0))
-        draw.text((20, HALF + 145), "[ COMMENT ]", font=font_cta,
-                  fill=(255, 255, 0), anchor="lb",
-                  stroke_width=2, stroke_fill=(0, 0, 0))
+        # Pill-style CTA buttons
+        try:
+            font_cta2 = ImageFont.truetype(FONT_PATH, 32)
+        except Exception:
+            font_cta2 = ImageFont.load_default()
+
+        # LIKE button - bottom left of top image
+        like_x, like_y = 30, HALF - 160
+        draw.rounded_rectangle([like_x, like_y, like_x + 160, like_y + 50],
+                                radius=25, fill=(255, 50, 50))
+        draw.text((like_x + 80, like_y + 25), "LIKE THIS", font=font_cta2,
+                  fill=(255, 255, 255), anchor="mm")
+
+        # COMMENT button - top left of bottom image
+        com_x, com_y = 30, HALF + 110
+        draw.rounded_rectangle([com_x, com_y, com_x + 210, com_y + 50],
+                                radius=25, fill=(30, 30, 30))
+        draw.text((com_x + 105, com_y + 25), "COMMENT THIS", font=font_cta2,
+                  fill=(255, 255, 255), anchor="mm")
 
     if countdown is not None and not show_result:
         draw.text((50, 50), str(countdown), font=font_timer,
@@ -688,36 +540,9 @@ def make_beep_pcm(freq=880, sr=44100, duration=0.12):
     return (np.stack([mono, mono], axis=1) * 32767).astype(np.int16).tobytes()
 
 
-def make_voiceover(text, tmp_dir, index):
-    """Create a short English voiceover mp3. Returns path or None."""
-    try:
-        encoded_text = urllib.parse.quote(text[:180])
-        url = (
-            "https://translate.google.com/translate_tts"
-            f"?ie=UTF-8&tl=en&client=tw-ob&q={encoded_text}"
-        )
-        r = get_session().get(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "audio/mpeg,*/*",
-            },
-            timeout=20
-        )
-        r.raise_for_status()
-        path = os.path.join(tmp_dir, f"voice_{index}.mp3")
-        with open(path, "wb") as f:
-            f.write(r.content)
-        return path
-    except Exception as e:
-        logger.warning(f"Voiceover failed: {e}")
-        return None
-
-
 def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, index):
     logger.info(f"Building clip {index}: {left_label} VS {right_label}")
     out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
-    raw_path = os.path.join(tmp_dir, f"battle_raw_{index:02d}.mp4")
     audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
 
     left_pct = random.randint(30, 70)
@@ -750,40 +575,18 @@ def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, ind
         "-r", str(FPS), "-i", "pipe:0",
         "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", audio_path,
         "-vcodec", "mpeg4", "-q:v", "8", "-acodec", "aac",
-        "-shortest", raw_path
+        "-shortest", out_path
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     proc.communicate(input=frames_bytes)
-
-    voice_path = make_voiceover(f"{left_label} versus {right_label}. Which one would you choose?", tmp_dir, index)
-    if voice_path:
-        try:
-            subprocess.run([
-                "ffmpeg", "-y", "-i", raw_path, "-i", voice_path,
-                "-filter_complex", "[0:a]volume=0.25[a0];[1:a]volume=1.45[a1];[a0][a1]amix=inputs=2:duration=first[a]",
-                "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
-                "-shortest", out_path
-            ], check=True, capture_output=True)
-        except Exception as e:
-            logger.warning(f"Voice mix failed: {e}")
-            os.rename(raw_path, out_path)
-    else:
-        os.rename(raw_path, out_path)
-
     logger.info(f"Clip {index} done")
     return out_path
 
 
 def download_music(tmp_dir):
     try:
-        music_urls = [
-            "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-            "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-            "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
-            "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3",
-        ]
-        r = get_session().get(random.choice(music_urls), timeout=30)
+        r = get_session().get("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", timeout=30)
         r.raise_for_status()
         path = os.path.join(tmp_dir, "music.mp3")
         with open(path, "wb") as f:
@@ -811,7 +614,7 @@ def concat_with_ffmpeg(clip_paths, tmp_dir):
     if music:
         subprocess.run([
             "ffmpeg", "-y", "-i", merged, "-i", music,
-            "-filter_complex", "[1:a]volume=0.18[m];[0:a][m]amix=inputs=2:duration=first[a]",
+            "-filter_complex", "[1:a]volume=0.25[m];[0:a][m]amix=inputs=2:duration=first[a]",
             "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
             "-shortest", out
         ], check=True, capture_output=True)
@@ -821,9 +624,9 @@ def concat_with_ffmpeg(clip_paths, tmp_dir):
 
 
 def generate_metadata(variants, category_name):
-    clean_cat = re.sub(r'[^\w\s]', '', category_title(category_name)).strip()
-    title = f"{variants[0][0]} VS {variants[0][1]} - Which Side Are You On? #shorts"
-    desc = "Every day we put two choices head-to-head - YOU decide!\n\n"
+    clean_cat = re.sub(r'[^\w\s]', '', category_name).strip()
+    title = f"{variants[0][0]} VS {variants[0][1]} — Which Side Are You On? #shorts"
+    desc = f"Every day we put two choices head-to-head — YOU decide!\n\n"
     desc += f"Category: {clean_cat}\n\nToday's battles:\n"
     for l, r in variants:
         desc += f"* {l} VS {r}\n"
@@ -834,7 +637,7 @@ def generate_metadata(variants, category_name):
 
 
 def generate_tiktok_metadata(variants):
-    title = f"{variants[0][0]} VS {variants[0][1]} - Which side are you? Comment below!"
+    title = f"{variants[0][0]} VS {variants[0][1]} 🔥 Which side are you? Comment below!"
     tags = "#vs #battle #foryou #fyp #viral #wouldyourather #pickone #shorts #battlevote #trending"
     return title, f"{title}\n\n{tags}"
 
@@ -964,13 +767,13 @@ async def build_video_for_user(user_id, category_name, variants, message):
 
         await message.answer_video(
             FSInputFile(final_path, filename="vs_battle.mp4"),
-            caption=f"Готово! Категория: {category_title(category_name)}",
+            caption=f"Ready! Category: {category_name}",
             supports_streaming=True
         )
         await message.answer(
             f"YouTube:\n{title}\n\nTikTok:\n{tiktok_desc}"
         )
-        await message.answer("Опубликовать на YouTube?", reply_markup=kb)
+        await message.answer("Publish to YouTube?", reply_markup=kb)
 
     except Exception as e:
         logger.error(f"Build error: {e}", exc_info=True)
@@ -980,11 +783,11 @@ async def build_video_for_user(user_id, category_name, variants, message):
 def get_category_keyboard():
     buttons = []
     for i in range(0, len(CATEGORY_NAMES), 2):
-        row = [KeyboardButton(text=category_title(CATEGORY_NAMES[i]))]
+        row = [KeyboardButton(text=CATEGORY_NAMES[i])]
         if i + 1 < len(CATEGORY_NAMES):
-            row.append(KeyboardButton(text=category_title(CATEGORY_NAMES[i + 1])))
+            row.append(KeyboardButton(text=CATEGORY_NAMES[i + 1]))
         buttons.append(row)
-    buttons.append([KeyboardButton(text=RANDOM_CATEGORY_TEXT)])
+    buttons.append([KeyboardButton(text="🎲 Случайная категория")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -996,15 +799,15 @@ async def start(message: Message):
     )
 
 
-@dp.message(F.text == RANDOM_CATEGORY_TEXT)
+@dp.message(F.text == "🎲 Случайная категория")
 async def random_category(message: Message):
     category_name = random.choice(CATEGORY_NAMES)
     await generate_from_category(message, category_name)
 
 
-@dp.message(F.text.in_(set(DISPLAY_TO_CATEGORY.keys())))
+@dp.message(F.text.in_(set(CATEGORY_NAMES)))
 async def category_selected(message: Message):
-    await generate_from_category(message, DISPLAY_TO_CATEGORY[message.text])
+    await generate_from_category(message, message.text)
 
 
 async def generate_from_category(message: Message, category_name: str):
@@ -1015,20 +818,20 @@ async def generate_from_category(message: Message, category_name: str):
     if user_id not in used_variants:
         used_variants[user_id] = set()
 
-    available = [b for b in all_battles if normalize_battle(b) not in used_variants[user_id]]
+    available = [b for b in all_battles if tuple(b) not in used_variants[user_id]]
     if len(available) < 5:
+        # Сбрасываем только эту категорию
         used_variants[user_id] = {v for v in used_variants[user_id]
-                                   if v not in [normalize_battle(b) for b in all_battles]}
+                                   if v not in [tuple(b) for b in all_battles]}
         available = all_battles.copy()
 
     variants = random.sample(available, min(5, len(available)))
-    variants = [(r, l) if random.random() < 0.5 else (l, r) for l, r in variants]
     for v in variants:
-        used_variants[user_id].add(normalize_battle(v))
+        used_variants[user_id].add(tuple(v))
     save_used_variants(used_variants)
 
     await message.answer(
-        f"Категория: {category_title(category_name)}\n\n" +
+        f"Category: {category_name}\n\n" +
         "\n".join(f"* {l} VS {r}" for l, r in variants)
     )
     await build_video_for_user(user_id, category_name, variants, message)
@@ -1127,7 +930,7 @@ async def autopilot():
         try:
             user_id = AUTOPILOT_USER_ID
 
-            # Р’С‹Р±РёСЂР°РµРј СЃР»СѓС‡Р°Р№РЅСѓСЋ РєР°С‚РµРіРѕСЂРёСЋ
+            # Выбираем случайную категорию
             category_name = random.choice(CATEGORY_NAMES)
             category = CATEGORIES[category_name]
             all_battles = category["battles"]
@@ -1146,7 +949,7 @@ async def autopilot():
                 used_variants[user_id].add(tuple(v))
             save_used_variants(used_variants)
 
-            logger.info(f"Autopilot: {category_name} вЂ” {variants}")
+            logger.info(f"Autopilot: {category_name} — {variants}")
             await bot.send_message(user_id, f"Autopilot: {category_name}")
 
             tmp_dir = tempfile.mkdtemp()
@@ -1184,4 +987,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
