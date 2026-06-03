@@ -15,6 +15,7 @@ import requests
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup
+from gtts import gTTS
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -26,6 +27,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 VOICE = os.getenv("VOICE", "en-US-GuyNeural")
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto").lower()
 W, H = 1080, 1920
 FPS = 30
 VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "42"))
@@ -168,8 +170,29 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
 
 
 async def make_voiceover(text: str, out_path: Path) -> None:
+    if TTS_PROVIDER == "gtts":
+        await asyncio.to_thread(make_voiceover_gtts, text, out_path)
+        return
+
+    if TTS_PROVIDER == "edge":
+        await make_voiceover_edge(text, out_path)
+        return
+
+    try:
+        await make_voiceover_edge(text, out_path)
+    except Exception as e:
+        logger.warning("edge-tts failed, falling back to gTTS: %s", e)
+        await asyncio.to_thread(make_voiceover_gtts, text, out_path)
+
+
+async def make_voiceover_edge(text: str, out_path: Path) -> None:
     communicate = edge_tts.Communicate(text, VOICE, rate="+8%")
     await communicate.save(str(out_path))
+
+
+def make_voiceover_gtts(text: str, out_path: Path) -> None:
+    tts = gTTS(text=text, lang="en", tld="com", slow=False)
+    tts.save(str(out_path))
 
 
 def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
