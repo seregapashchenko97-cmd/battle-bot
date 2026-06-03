@@ -1,987 +1,484 @@
 import asyncio
-import random
-import io
-import os
-import re
-import requests
-import tempfile
-import subprocess
-import numpy as np
-import logging
+import html
 import json
-import urllib.request
-import urllib.parse
-import datetime
-import time
+import logging
+import os
+import random
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import edge_tts
+import requests
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import CommandStart
+from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from PIL import Image, ImageDraw, ImageFont
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
-    FSInputFile
-)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
-YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
-YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
-YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UCPq1H-SmJ_N7UxImtFHrdeQ")
-AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
-AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
-FAL_API_KEY = os.getenv("FAL_API_KEY", "")
 
-bot = Bot(BOT_TOKEN, request_timeout=120)
+VOICE = os.getenv("VOICE", "en-US-GuyNeural")
+W, H = 1080, 1920
+FPS = 30
+VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "42"))
+MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
+
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is missing")
+if not PEXELS_API_KEY:
+    raise RuntimeError("PEXELS_API_KEY is missing")
+
+bot = Bot(BOT_TOKEN, request_timeout=300)
 dp = Dispatcher()
+active_users = set()
 
-FONT_PATH = "Anton-Regular.ttf"
-CLIP_DURATION = 5
-FPS = 20
-W, H = 720, 1280
-QUEUE_SLOTS = [9, 15, 21]
 
-# ============================================================
-# ТЕМАТИЧЕСКИЕ КАТЕГОРИИ
-# ============================================================
-CATEGORIES = {
-    "💰 Money & Success": {
-        "battles": [
-            ("Money", "Love"),
-            ("Fame", "Happiness"),
-            ("Hustle", "Balance"),
-            ("Rich & Alone", "Poor & Together"),
-            ("Billionaire", "Rock Star"),
-            ("Work Hard", "Work Smart"),
-            ("Success", "Peace of Mind"),
-            ("Power", "Freedom"),
-            ("Ambition", "Loyalty"),
-            ("Career", "Family"),
+TOPICS = {
+    "Boss cringe": {
+        "button": "😬 Boss cringe",
+        "question": "What is the cringiest thing your boss ever did?",
+        "queries": [
+            "soap cutting satisfying",
+            "carpet cleaning satisfying",
+            "concrete smoothing",
+            "pressure washing satisfying",
+            "paint mixing satisfying",
         ],
-        "pexels": {
-            "Money": "luxury money cash gold dark background cinematic",
-            "Love": "romantic couple love dark moody cinematic",
-            "Fame": "celebrity red carpet spotlight crowd dark",
-            "Happiness": "happy laughing friends joy",
-            "Hustle": "businessman working late night office dark",
-            "Balance": "yoga meditation peaceful nature",
-            "Rich & Alone": "luxury penthouse alone",
-            "Poor & Together": "friends together happy community",
-            "Billionaire": "luxury yacht private jet mansion dark",
-            "Rock Star": "rock concert stage performer",
-            "Work Hard": "working late night laptop grind",
-            "Work Smart": "smart strategy chess planning",
-            "Success": "winner trophy podium celebrate",
-            "Peace of Mind": "peaceful calm nature zen",
-            "Power": "strong leader confident",
-            "Freedom": "open road motorcycle freedom sky",
-            "Ambition": "skyscraper climbing top goal",
-            "Loyalty": "friendship trust handshake bond",
-            "Career": "corporate office career suit",
-            "Family": "family together home warm",
-        }
+        "stories": [
+            "My boss made every email start with, dear workplace family. Even emails about the broken printer.",
+            "One manager created a fun jar. If you looked tired, you had to pull a note. Mine said, do ten jumping jacks and compliment the CEO.",
+            "A boss announced Hawaiian shirt Friday. Then he wrote up everyone who wore one because it was too distracting.",
+            "My old boss made us clap when he entered the room. By Friday, people started taking lunch before he arrived.",
+            "One boss installed a dress code for beach day. It was a normal Monday. He was the only person who showed up in swim shorts.",
+        ],
     },
-    "🚗 Cars & Luxury": {
-        "battles": [
-            ("Ferrari", "Lamborghini"),
-            ("Rolls Royce", "Bugatti"),
-            ("BMW", "Mercedes"),
-            ("Porsche", "Aston Martin"),
-            ("Tesla", "Ferrari"),
-            ("Sports Car", "SUV"),
-            ("Lamborghini Urus", "Porsche Cayenne"),
-            ("McLaren", "Ferrari"),
-            ("Bentley", "Rolls Royce"),
-            ("Corvette", "Mustang"),
+    "Weird school": {
+        "button": "🏫 Weird school",
+        "question": "What was the weirdest rule at your school?",
+        "queries": [
+            "slime satisfying",
+            "sand cutting satisfying",
+            "soap cutting",
+            "cleaning satisfying",
+            "cake decorating satisfying",
         ],
-        "pexels": {
-            "Ferrari": "red ferrari sports car dark background studio",
-            "Lamborghini": "lamborghini aventador dark background dramatic",
-            "Rolls Royce": "rolls royce luxury black car",
-            "Bugatti": "bugatti chiron supercar fast",
-            "BMW": "bmw m3 sports car",
-            "Mercedes": "mercedes amg luxury car",
-            "Porsche": "porsche 911 sports car",
-            "Aston Martin": "aston martin luxury british car",
-            "Tesla": "tesla electric car modern",
-            "Sports Car": "sports car racing track speed",
-            "SUV": "suv luxury offroad",
-            "Lamborghini Urus": "lamborghini urus suv",
-            "Porsche Cayenne": "porsche cayenne suv",
-            "McLaren": "mclaren supercar british",
-            "Bentley": "bentley luxury continental",
-            "Corvette": "corvette american muscle car",
-            "Mustang": "ford mustang muscle car",
-        }
+        "stories": [
+            "My school banned backpacks because they were a distraction. So everyone carried books in laundry baskets.",
+            "A teacher made us ask permission to sharpen pencils. Then got mad because everyone kept interrupting class.",
+            "Our principal banned running in the hallway. Then made us do a timed evacuation drill.",
+            "They banned hoodies for safety. But the mascot costume had a giant hood and was somehow fine.",
+            "One teacher said blue pens were disrespectful. Nobody knew why. She just called them aggressive.",
+        ],
     },
-    "🍔 Food & Drink": {
-        "battles": [
-            ("Burger", "Pizza"),
-            ("Sushi", "Steak"),
-            ("Coffee", "Energy Drink"),
-            ("Tacos", "Burrito"),
-            ("Ramen", "Pasta"),
-            ("Fried Chicken", "Grilled Salmon"),
-            ("Cheesecake", "Chocolate Cake"),
-            ("Beer", "Whiskey"),
-            ("Chips", "Popcorn"),
-            ("Pancakes", "Waffles"),
+    "First date": {
+        "button": "💔 First date",
+        "question": "What was your worst first date?",
+        "queries": [
+            "food cutting satisfying",
+            "chocolate pouring",
+            "coffee art",
+            "soap cutting satisfying",
+            "ice cream making",
         ],
-        "pexels": {
-            "Burger": "gourmet burger dark background dramatic close up",
-            "Pizza": "pizza slice melting cheese dark moody close up",
-            "Sushi": "sushi rolls japanese food",
-            "Steak": "wagyu steak grilled dark background cinematic",
-            "Coffee": "espresso coffee dark moody cafe aesthetic",
-            "Energy Drink": "energy drink can neon dark",
-            "Tacos": "mexican tacos street food",
-            "Burrito": "burrito wrap mexican food",
-            "Ramen": "ramen noodles japanese broth",
-            "Pasta": "pasta italian food sauce",
-            "Fried Chicken": "fried chicken crispy golden",
-            "Grilled Salmon": "grilled salmon healthy food",
-            "Cheesecake": "cheesecake dessert slice",
-            "Chocolate Cake": "chocolate cake dessert dark",
-            "Beer": "beer glass pub cold",
-            "Whiskey": "whiskey glass dark bar",
-            "Chips": "chips snack bowl",
-            "Popcorn": "popcorn cinema movie",
-            "Pancakes": "pancakes stack maple syrup",
-            "Waffles": "waffles breakfast sweet",
-        }
+        "stories": [
+            "He brought his mom. Not by accident. She sat next to us and rated my answers out of ten.",
+            "She asked me my credit score before the appetizers came. Then said mine had backup character energy.",
+            "He took me to a restaurant where he worked, then asked his manager for an employee discount mid-date.",
+            "She spent twenty minutes explaining her ex's workout routine. I still do not know her favorite color.",
+            "He said he forgot his wallet. Then ordered the most expensive steak and called it a trust exercise.",
+        ],
     },
-    "🎵 Music & Entertainment": {
-        "battles": [
-            ("Hip Hop", "Rock"),
-            ("Drake", "Kendrick"),
-            ("Netflix", "Cinema"),
-            ("Vinyl", "Streaming"),
-            ("Concert", "Festival"),
-            ("Pop", "Jazz"),
-            ("Guitar", "Piano"),
-            ("Studio", "Live Performance"),
-            ("Headphones", "Speakers"),
-            ("Classical", "Electronic"),
+    "Got fired": {
+        "button": "🧾 Got fired",
+        "question": "What is the dumbest reason someone got fired?",
+        "queries": [
+            "factory satisfying",
+            "machine cutting",
+            "woodworking satisfying",
+            "metal polishing satisfying",
+            "pressure washing",
         ],
-        "pexels": {
-            "Hip Hop": "hip hop rapper microphone urban dark stage",
-            "Rock": "rock concert electric guitar dark stage dramatic",
-            "Drake": "rapper music stage microphone",
-            "Kendrick": "rapper performer stage lights",
-            "Netflix": "watching tv series couch night",
-            "Cinema": "movie theater cinema screen dark",
-            "Vinyl": "vinyl record player retro music",
-            "Streaming": "spotify music phone earphones",
-            "Concert": "music concert crowd lights stage",
-            "Festival": "music festival outdoor crowd",
-            "Pop": "pop music singer stage performance",
-            "Jazz": "jazz music saxophone dark bar",
-            "Guitar": "electric guitar music dark",
-            "Piano": "piano keys music performance",
-            "Studio": "recording studio music producer",
-            "Live Performance": "live music band stage",
-            "Headphones": "headphones music listening",
-            "Speakers": "speakers sound system music",
-            "Classical": "orchestra classical music concert",
-            "Electronic": "dj electronic music club",
-        }
+        "stories": [
+            "A guy got fired for being late to a meeting that got canceled before he arrived.",
+            "Someone got fired for eating a donut from the break room. The donut was from the box he brought.",
+            "My coworker got written up for not smiling during a power outage.",
+            "A manager fired someone for using too many sticky notes. The next week they launched a productivity board.",
+            "One employee got fired for replying okay too quickly. The boss said it felt sarcastic.",
+        ],
     },
-    "💪 Lifestyle & Fitness": {
-        "battles": [
-            ("Gym", "Home Workout"),
-            ("Running", "Swimming"),
-            ("Vegan", "Carnivore"),
-            ("Early Bird", "Night Owl"),
-            ("City Life", "Country Life"),
-            ("Solo Travel", "Group Travel"),
-            ("Beach", "Mountains"),
-            ("Meditation", "Gym"),
-            ("Minimalism", "Luxury"),
-            ("Cold Shower", "Hot Bath"),
+    "Roommate": {
+        "button": "🛋 Roommate",
+        "question": "What is the weirdest thing your roommate did?",
+        "queries": [
+            "deep cleaning satisfying",
+            "car wash satisfying",
+            "carpet cleaning",
+            "organizing satisfying",
+            "soap cutting",
         ],
-        "pexels": {
-            "Gym": "bodybuilder gym dark dramatic workout pumping iron",
-            "Home Workout": "home workout exercise training",
-            "Running": "athlete running city marathon dramatic dark",
-            "Swimming": "swimming pool athlete water",
-            "Vegan": "vegan food healthy green vegetables",
-            "Carnivore": "steak meat protein diet",
-            "Early Bird": "sunrise morning coffee fresh",
-            "Night Owl": "night city dark working late",
-            "City Life": "city skyline urban life busy",
-            "Country Life": "countryside peaceful nature farm",
-            "Solo Travel": "solo traveler backpack adventure",
-            "Group Travel": "group friends travel adventure",
-            "Beach": "tropical beach ocean sunset",
-            "Mountains": "mountain peak snow adventure",
-            "Meditation": "meditation yoga peace mindfulness",
-            "Minimalism": "minimalist clean simple interior",
-            "Luxury": "luxury lifestyle expensive fashion",
-            "Cold Shower": "cold shower water refreshing",
-            "Hot Bath": "hot bath relaxing spa",
-        }
-    },
-    "📱 Tech & Brands": {
-        "battles": [
-            ("iPhone", "Android"),
-            ("Nike", "Adidas"),
-            ("PlayStation", "Xbox"),
-            ("Mac", "PC"),
-            ("Instagram", "TikTok"),
-            ("Apple Watch", "Rolex"),
-            ("Google", "Apple"),
-            ("YouTube", "Netflix"),
-            ("Uber", "Taxi"),
-            ("Amazon", "Local Shop"),
+        "stories": [
+            "My roommate labeled every egg in the fridge with a tiny first name. Then got upset when I ate Brandon.",
+            "He vacuumed at 3 AM because he said dust is most vulnerable at night.",
+            "She kept a spreadsheet of who opened the fridge. We were two people.",
+            "My roommate washed paper plates because he said disposable was a mindset.",
+            "He used the oven as a sock drawer. I found out while preheating pizza.",
         ],
-        "pexels": {
-            "iPhone": "iphone pro dark background studio minimal",
-            "Android": "samsung android smartphone",
-            "Nike": "nike air jordan sneakers dark background studio",
-            "Adidas": "adidas sneakers shoes sport",
-            "PlayStation": "playstation gaming console controller",
-            "Xbox": "xbox gaming controller",
-            "Mac": "macbook apple laptop",
-            "PC": "gaming pc desktop setup",
-            "Instagram": "instagram phone social media",
-            "TikTok": "tiktok phone social media video",
-            "Apple Watch": "apple watch smartwatch tech",
-            "Rolex": "rolex gold watch dark background luxury closeup",
-            "Google": "google tech modern office",
-            "Apple": "apple logo tech modern",
-            "YouTube": "youtube watching video phone",
-            "Netflix": "netflix streaming tv series",
-            "Uber": "uber ride car city",
-            "Taxi": "taxi cab yellow city",
-            "Amazon": "amazon package delivery shopping",
-            "Local Shop": "local market small business",
-        }
-    },
-    "👙 Girls Battle": {
-        "battles": [
-            ("Blonde", "Brunette"),
-            ("Fitness Girl", "Curvy Girl"),
-            ("Natural Beauty", "Full Makeup"),
-            ("Beach Girl", "Gym Girl"),
-            ("Tattoo Girl", "Clean Look"),
-            ("Short Hair", "Long Hair"),
-            ("Blue Eyes", "Brown Eyes"),
-            ("Street Style", "Elegant Look"),
-            ("Sporty Girl", "Girly Girl"),
-            ("Summer Vibe", "Winter Vibe"),
-        ],
-        "pexels": {
-            "Blonde": "blonde model studio portrait dark background",
-            "Brunette": "brunette model studio portrait dark background",
-            "Fitness Girl": "fitness model athletic woman sport dark",
-            "Curvy Girl": "curvy woman confident fashion model",
-            "Natural Beauty": "natural woman no makeup fresh skin portrait",
-            "Full Makeup": "woman glamour makeup red lips portrait",
-            "Beach Girl": "woman bikini beach ocean summer",
-            "Gym Girl": "woman gym workout strong fitness dark",
-            "Tattoo Girl": "woman tattoos dark alternative model",
-            "Clean Look": "woman clean elegant fashion model",
-            "Short Hair": "woman short hair model fashion portrait",
-            "Long Hair": "woman long hair flowing model beautiful",
-            "Blue Eyes": "woman blue eyes portrait close up studio",
-            "Brown Eyes": "woman brown eyes portrait dark studio",
-            "Street Style": "woman street fashion urban style",
-            "Elegant Look": "woman elegant dress luxury fashion",
-            "Sporty Girl": "woman sporty athletic casual outdoor",
-            "Girly Girl": "woman feminine pink elegant dress",
-            "Summer Vibe": "woman summer tropical beach vibes",
-            "Winter Vibe": "woman winter fashion snow cozy",
-        }
-    },
-    "🧠 Deep Questions": {
-        "battles": [
-            ("Truth", "Kindness"),
-            ("Revenge", "Forgiveness"),
-            ("Logic", "Intuition"),
-            ("Alpha", "Sigma"),
-            ("Respected", "Loved"),
-            ("Die Famous", "Live Unknown"),
-            ("Hard Truth", "Sweet Lie"),
-            ("Short Pleasure", "Long Success"),
-            ("Passion", "Stability"),
-            ("Being Right", "Being Happy"),
-        ],
-        "pexels": {
-            "Truth": "truth light mirror honest face",
-            "Kindness": "kindness help hand charity",
-            "Revenge": "dark storm angry revenge shadow",
-            "Forgiveness": "forgiveness light peace calm",
-            "Logic": "chess strategy thinking mind",
-            "Intuition": "intuition spiritual meditation soul",
-            "Alpha": "alpha male confident strong leader",
-            "Sigma": "lone wolf solitary alone dark forest",
-            "Respected": "respected leader business podium",
-            "Loved": "loved couple embrace romantic",
-            "Die Famous": "celebrity famous spotlight crowd",
-            "Live Unknown": "peaceful unknown quiet simple life",
-            "Hard Truth": "mirror truth face honest reality",
-            "Sweet Lie": "sweet smile fake mask illusion",
-            "Short Pleasure": "party fun night pleasure enjoy",
-            "Long Success": "success trophy achievement goal",
-            "Passion": "passion fire intense emotion",
-            "Stability": "stable home family secure",
-            "Being Right": "arguing debate strong opinion",
-            "Being Happy": "happy smile joy content",
-        }
     },
 }
 
-# Список категорий для кнопок
-CATEGORY_NAMES = list(CATEGORIES.keys())
+BUTTON_TO_TOPIC = {topic["button"]: name for name, topic in TOPICS.items()}
 
-# Хранилища
-pending_videos = {}
-publish_queue = {}
-USED_VARIANTS_FILE = "/tmp/used_variants.json"
-user_category = {}  # текущая категория пользователя
 
-
-def load_used_variants():
-    try:
-        with open(USED_VARIANTS_FILE, "r") as f:
-            data = json.load(f)
-            return {int(k): set(tuple(v) for v in vals) for k, vals in data.items()}
-    except Exception:
-        return {}
-
-
-def save_used_variants(used):
-    try:
-        with open(USED_VARIANTS_FILE, "w") as f:
-            json.dump({str(k): [list(v) for v in vals] for k, vals in used.items()}, f)
-    except Exception:
-        pass
-
-
-used_variants = load_used_variants()
-
-
-def get_session():
-    session = requests.Session()
-    retry = Retry(total=2, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    return session
-
-
-def fetch_image_fal(prompt):
-    """Генерация через fal.ai FLUX."""
-    try:
-        session = get_session()
-        r = session.post(
-            "https://fal.run/fal-ai/flux/schnell",
-            headers={
-                "Authorization": f"Key {FAL_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "prompt": f"{prompt}, cinematic dramatic photo, dark moody atmosphere, professional photography, hyperrealistic, 4k, no text",
-                "image_size": "landscape_4_3",
-                "num_inference_steps": 4,
-                "num_images": 1,
-            },
-            timeout=60
-        )
-        r.raise_for_status()
-        result = r.json()
-        img_url = result["images"][0]["url"]
-        img_r = session.get(img_url, timeout=30)
-        img_r.raise_for_status()
-        logger.info(f"FAL image generated for: {prompt[:30]}")
-        return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-    except Exception as e:
-        logger.warning(f"FAL failed: {e}")
-        return None
-
-
-def fetch_image(query, category_name):
-    logger.info(f"Generating: {query}")
-    category = CATEGORIES.get(category_name, {})
-    pexels_map = category.get("pexels", {})
-    search_query = pexels_map.get(query, f"{query} dramatic dark")
-
-    # Пробуем fal.ai
-    if FAL_API_KEY:
-        img = fetch_image_fal(search_query)
-        if img:
-            return img
-
-    # Fallback на Pexels
-    logger.info(f"Falling back to Pexels for: {query}")
-    session = get_session()
-    headers = {"Authorization": PEXELS_API_KEY}
-
-    for q in [search_query, query, "dramatic dark cinematic"]:
-        try:
-            r = session.get("https://api.pexels.com/v1/search",
-                           params={"query": q, "per_page": 20, "orientation": "landscape"},
-                           headers=headers, timeout=20)
-            r.raise_for_status()
-            photos = r.json().get("photos", [])
-            if photos:
-                photo = random.choice(photos)
-                img_url = photo["src"]["large2x"] if "large2x" in photo["src"] else photo["src"]["large"]
-                img_r = session.get(img_url, timeout=20)
-                img_r.raise_for_status()
-                return Image.open(io.BytesIO(img_r.content)).convert("RGB")
-        except Exception as e:
-            logger.warning(f"Pexels failed '{q}': {e}")
-
-    return Image.new("RGB", (W, H // 2), (20, 20, 20))
-
-
-def fit_image(im, w, h):
-    im = im.copy()
-    ratio = max(w / im.width, h / im.height)
-    new_w, new_h = int(im.width * ratio), int(im.height * ratio)
-    im = im.resize((new_w, new_h), Image.LANCZOS)
-    x, y = (new_w - w) // 2, (new_h - h) // 2
-    return im.crop((x, y, x + w, y + h))
-
-
-def build_frame(left_label, right_label, left_img, right_img,
-                countdown=None, show_result=False, left_pct=None, right_pct=None):
-    HALF = H // 2
-    card = Image.new("RGB", (W, H), (0, 0, 0))
-    card.paste(fit_image(left_img, W, HALF), (0, 0))
-    card.paste(fit_image(right_img, W, HALF), (0, HALF))
-
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ov = ImageDraw.Draw(overlay)
-    ov.rectangle([0, HALF - 130, W, HALF + 130], fill=(0, 0, 0, 210))
-
-    if show_result and left_pct is not None:
-        if left_pct >= right_pct:
-            ov.rectangle([0, 0, W, HALF - 130], fill=(0, 180, 0, 60))
-        else:
-            ov.rectangle([0, HALF + 130, W, H], fill=(0, 180, 0, 60))
-
-    card = Image.alpha_composite(card.convert("RGBA"), overlay).convert("RGB")
-    draw = ImageDraw.Draw(card)
-
-    try:
-        font_vs    = ImageFont.truetype(FONT_PATH, 100)
-        font_label = ImageFont.truetype(FONT_PATH, 48)
-        font_timer = ImageFont.truetype(FONT_PATH, 140)
-        font_pct   = ImageFont.truetype(FONT_PATH, 64)
-        font_cta   = ImageFont.truetype(FONT_PATH, 36)
-    except Exception:
-        font_vs = font_label = font_timer = font_pct = font_cta = ImageFont.load_default()
-
-    draw.line([(0, HALF), (W, HALF)], fill=(220, 30, 30), width=6)
-    draw.text((W//2, HALF), "VS", font=font_vs, fill=(220, 30, 30), anchor="mm",
-              stroke_width=4, stroke_fill=(0, 0, 0))
-
-    if show_result and left_pct is not None:
-        left_color = (0, 220, 0) if left_pct >= right_pct else (255, 255, 255)
-        right_color = (0, 220, 0) if right_pct > left_pct else (255, 255, 255)
-        draw.text((W//2, HALF - 75), f"{left_label.upper()}  {left_pct}%",
-                  font=font_pct, fill=left_color, anchor="mb",
-                  stroke_width=3, stroke_fill=(0, 0, 0))
-        draw.text((W//2, HALF + 75), f"{right_pct}%  {right_label.upper()}",
-                  font=font_pct, fill=right_color, anchor="mt",
-                  stroke_width=3, stroke_fill=(0, 0, 0))
-    else:
-        draw.text((W//2, HALF - 75), left_label.upper(), font=font_label,
-                  fill=(255, 255, 255), anchor="mb",
-                  stroke_width=3, stroke_fill=(0, 0, 0))
-        draw.text((W//2, HALF + 75), right_label.upper(), font=font_label,
-                  fill=(255, 255, 255), anchor="mt",
-                  stroke_width=3, stroke_fill=(0, 0, 0))
-
-    if not show_result:
-        # Pill-style CTA buttons
-        try:
-            font_cta2 = ImageFont.truetype(FONT_PATH, 32)
-        except Exception:
-            font_cta2 = ImageFont.load_default()
-
-        # LIKE button - bottom left of top image
-        like_x, like_y = 30, HALF - 160
-        draw.rounded_rectangle([like_x, like_y, like_x + 160, like_y + 50],
-                                radius=25, fill=(255, 50, 50))
-        draw.text((like_x + 80, like_y + 25), "LIKE THIS", font=font_cta2,
-                  fill=(255, 255, 255), anchor="mm")
-
-        # COMMENT button - top left of bottom image
-        com_x, com_y = 30, HALF + 110
-        draw.rounded_rectangle([com_x, com_y, com_x + 210, com_y + 50],
-                                radius=25, fill=(30, 30, 30))
-        draw.text((com_x + 105, com_y + 25), "COMMENT THIS", font=font_cta2,
-                  fill=(255, 255, 255), anchor="mm")
-
-    if countdown is not None and not show_result:
-        draw.text((50, 50), str(countdown), font=font_timer,
-                  fill=(255, 50, 50), anchor="lt",
-                  stroke_width=6, stroke_fill=(0, 0, 0))
-
-    return card
-
-
-def make_beep_pcm(freq=880, sr=44100, duration=0.12):
-    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
-    wave = (0.4 * np.sin(2 * np.pi * freq * t) * np.linspace(1, 0, len(t))).astype(np.float32)
-    silence = np.zeros(sr - len(wave), dtype=np.float32)
-    mono = np.concatenate([wave, silence])
-    return (np.stack([mono, mono], axis=1) * 32767).astype(np.int16).tobytes()
-
-
-def build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, index):
-    logger.info(f"Building clip {index}: {left_label} VS {right_label}")
-    out_path = os.path.join(tmp_dir, f"battle_{index:02d}.mp4")
-    audio_path = os.path.join(tmp_dir, f"audio_{index}.pcm")
-
-    left_pct = random.randint(30, 70)
-    right_pct = 100 - left_pct
-
-    frames_bytes = b""
-    audio_bytes = b""
-
-    for sec in range(CLIP_DURATION, 0, -1):
-        frame = build_frame(left_label, right_label, left_img, right_img, countdown=sec)
-        for _ in range(FPS):
-            frames_bytes += frame.tobytes()
-        audio_bytes += make_beep_pcm(freq=1200 if sec == 1 else 880)
-
-    result_frame = build_frame(left_label, right_label, left_img, right_img,
-                               countdown=0, show_result=True,
-                               left_pct=left_pct, right_pct=right_pct)
-    for _ in range(FPS):
-        frames_bytes += result_frame.tobytes()
-    audio_bytes += make_beep_pcm(freq=1500, duration=0.3)
-    audio_bytes += (np.zeros((44100 - int(44100 * 0.3)) * 2, dtype=np.int16)).tobytes()
-
-    with open(audio_path, "wb") as f:
-        f.write(audio_bytes)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{W}x{H}", "-pix_fmt", "rgb24",
-        "-r", str(FPS), "-i", "pipe:0",
-        "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", audio_path,
-        "-vcodec", "mpeg4", "-q:v", "8", "-acodec", "aac",
-        "-shortest", out_path
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    proc.communicate(input=frames_bytes)
-    logger.info(f"Clip {index} done")
-    return out_path
-
-
-def download_music(tmp_dir):
-    try:
-        r = get_session().get("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", timeout=30)
-        r.raise_for_status()
-        path = os.path.join(tmp_dir, "music.mp3")
-        with open(path, "wb") as f:
-            f.write(r.content)
-        return path
-    except Exception as e:
-        logger.warning(f"Music failed: {e}")
-        return None
-
-
-def concat_with_ffmpeg(clip_paths, tmp_dir):
-    list_file = os.path.join(tmp_dir, "clips.txt")
-    with open(list_file, "w") as f:
-        for p in clip_paths:
-            f.write(f"file '{p}'\n")
-
-    merged = os.path.join(tmp_dir, "merged.mp4")
-    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                    "-i", list_file, "-c", "copy", merged],
-                   check=True, capture_output=True)
-
-    music = download_music(tmp_dir)
-    out = os.path.join(tmp_dir, "final_vs.mp4")
-
-    if music:
-        subprocess.run([
-            "ffmpeg", "-y", "-i", merged, "-i", music,
-            "-filter_complex", "[1:a]volume=0.25[m];[0:a][m]amix=inputs=2:duration=first[a]",
-            "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
-            "-shortest", out
-        ], check=True, capture_output=True)
-    else:
-        os.rename(merged, out)
-    return out
-
-
-def generate_metadata(variants, category_name):
-    clean_cat = re.sub(r'[^\w\s]', '', category_name).strip()
-    title = f"{variants[0][0]} VS {variants[0][1]} — Which Side Are You On? #shorts"
-    desc = f"Every day we put two choices head-to-head — YOU decide!\n\n"
-    desc += f"Category: {clean_cat}\n\nToday's battles:\n"
-    for l, r in variants:
-        desc += f"* {l} VS {r}\n"
-    desc += "\nLIKE for top | COMMENT for bottom\n"
-    desc += "Subscribe @BattleVoteUSA\n\n"
-    desc += "#shorts #vs #battle #wouldyourather #viral #battlevote #pickone"
-    return title, desc
-
-
-def generate_tiktok_metadata(variants):
-    title = f"{variants[0][0]} VS {variants[0][1]} 🔥 Which side are you? Comment below!"
-    tags = "#vs #battle #foryou #fyp #viral #wouldyourather #pickone #shorts #battlevote #trending"
-    return title, f"{title}\n\n{tags}"
-
-
-def get_youtube_token():
-    data = urllib.parse.urlencode({
-        "client_id": YOUTUBE_CLIENT_ID,
-        "client_secret": YOUTUBE_CLIENT_SECRET,
-        "refresh_token": YOUTUBE_REFRESH_TOKEN,
-        "grant_type": "refresh_token"
-    }).encode()
-    req = urllib.request.Request(
-        "https://oauth2.googleapis.com/token", data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())["access_token"]
-
-
-def upload_to_youtube(video_path, title, description):
-    token = get_youtube_token()
-    metadata = {
-        "snippet": {
-            "title": title, "description": description,
-            "tags": ["shorts", "vs", "battle", "wouldyourather", "viral", "battlevote"],
-            "categoryId": "22",
-            "channelId": YOUTUBE_CHANNEL_ID
-        },
-        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
-    }
-    boundary = "bv_boundary_xyz"
-    meta_bytes = json.dumps(metadata).encode()
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-
-    body = (
-        f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
-    ).encode() + meta_bytes + (
-        f"\r\n--{boundary}\r\nContent-Type: video/mp4\r\n\r\n"
-    ).encode() + video_bytes + f"\r\n--{boundary}--".encode()
-
-    req = urllib.request.Request(
-        "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": f"multipart/related; boundary={boundary}",
-            "Content-Length": str(len(body))
-        },
-        method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        vid_id = json.loads(resp.read()).get("id", "unknown")
-        return f"https://www.youtube.com/shorts/{vid_id}"
-
-
-def get_next_slot(user_id):
-    now_utc = datetime.datetime.utcnow()
-    is_dst = 3 <= now_utc.month <= 11
-    utc_offset = 4 if is_dst else 5
-
-    if user_id not in publish_queue:
-        publish_queue[user_id] = []
-
-    publish_queue[user_id] = [s for s in publish_queue[user_id] if s["target_utc"] > now_utc]
-    busy = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == now_utc.date()]
-
-    for slot in QUEUE_SLOTS:
-        if slot not in busy:
-            target_hour_utc = (slot + utc_offset) % 24
-            target = now_utc.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
-            if target > now_utc:
-                return slot, target, now_utc.date()
-
-    tomorrow = now_utc.date() + datetime.timedelta(days=1)
-    busy_tomorrow = [s["hour_est"] for s in publish_queue[user_id] if s["day"] == tomorrow]
-    for slot in QUEUE_SLOTS:
-        if slot not in busy_tomorrow:
-            target_hour_utc = (slot + utc_offset) % 24
-            target = datetime.datetime.combine(tomorrow, datetime.time(target_hour_utc, 0))
-            return slot, target, tomorrow
-
-    return QUEUE_SLOTS[0], now_utc + datetime.timedelta(days=2), now_utc.date() + datetime.timedelta(days=2)
-
-
-async def delayed_publish(user_id, slot_id, video_data, target_utc, message):
-    now_utc = datetime.datetime.utcnow()
-    delay = max(0, (target_utc - now_utc).total_seconds())
-    await asyncio.sleep(delay)
-    try:
-        url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
-        publish_queue[user_id] = [s for s in publish_queue.get(user_id, []) if s["id"] != slot_id]
-        await message.answer(f"Published!\n{url}")
-    except Exception as e:
-        logger.error(f"Scheduled upload error: {e}", exc_info=True)
-        await message.answer(f"Publish error: {e}")
-
-
-async def build_video_for_user(user_id, category_name, variants, message):
-    try:
-        tmp_dir = tempfile.mkdtemp()
-        clip_paths = []
-
-        for idx, (left_label, right_label) in enumerate(variants, start=1):
-            await message.answer(f"Battle {idx}/5: {left_label} VS {right_label}")
-            left_img = fetch_image(left_label, category_name)
-            right_img = fetch_image(right_label, category_name)
-            clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
-            clip_paths.append(clip_path)
-
-        await message.answer("Merging final video...")
-        final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
-        title, description = generate_metadata(variants, category_name)
-        _, tiktok_desc = generate_tiktok_metadata(variants)
-
-        pending_videos[user_id] = {
-            "path": final_path,
-            "tmp_dir": tmp_dir,
-            "title": title,
-            "description": description
-        }
-
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="📅 В очередь", callback_data="add_to_queue"),
-            InlineKeyboardButton(text="🚀 Сейчас", callback_data="publish_now"),
-        ]])
-
-        await message.answer_video(
-            FSInputFile(final_path, filename="vs_battle.mp4"),
-            caption=f"Ready! Category: {category_name}",
-            supports_streaming=True
-        )
-        await message.answer(
-            f"YouTube:\n{title}\n\nTikTok:\n{tiktok_desc}"
-        )
-        await message.answer("Publish to YouTube?", reply_markup=kb)
-
-    except Exception as e:
-        logger.error(f"Build error: {e}", exc_info=True)
-        await message.answer(f"Error: {e}")
-
-
-def get_category_keyboard():
-    buttons = []
-    for i in range(0, len(CATEGORY_NAMES), 2):
-        row = [KeyboardButton(text=CATEGORY_NAMES[i])]
-        if i + 1 < len(CATEGORY_NAMES):
-            row.append(KeyboardButton(text=CATEGORY_NAMES[i + 1]))
-        buttons.append(row)
-    buttons.append([KeyboardButton(text="🎲 Случайная категория")])
+def main_keyboard() -> ReplyKeyboardMarkup:
+    buttons = [[KeyboardButton(text=topic["button"])] for topic in TOPICS.values()]
+    buttons.append([KeyboardButton(text="🎲 Random story")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer(
-        "BattleVote Bot\nВыбери категорию для генерации видео:",
-        reply_markup=get_category_keyboard()
+def get_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def clean_filename(text: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", text).strip("_")[:50] or "video"
+
+
+def build_script(topic_name: str) -> tuple[str, list[dict]]:
+    topic = TOPICS[topic_name]
+    stories = random.sample(topic["stories"], k=3)
+    parts = [{"kind": "hook", "text": topic["question"]}]
+    for index, story in enumerate(stories, start=1):
+        parts.append({"kind": "story", "text": f"Story {index}. {story}"})
+    parts.append({"kind": "outro", "text": "Would you quit, or just pretend this was normal?"})
+    narration = " ... ".join(part["text"] for part in parts)
+    return narration, parts
+
+
+async def make_voiceover(text: str, out_path: Path) -> None:
+    communicate = edge_tts.Communicate(text, VOICE, rate="+8%")
+    await communicate.save(str(out_path))
+
+
+def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
+    weights = [max(4, len(part["text"].split())) for part in parts]
+    weight_total = sum(weights)
+    cursor = 0.2
+    result = []
+    usable = max(8, total_seconds - 0.7)
+
+    for part, weight in zip(parts, weights):
+        duration = usable * weight / weight_total
+        start = cursor
+        end = min(total_seconds - 0.2, cursor + duration)
+        result.append({"start": start, "end": end, "text": part["text"], "kind": part["kind"]})
+        cursor = end
+    return result
+
+
+def ass_time(seconds: float) -> str:
+    seconds = max(0, seconds)
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    centis = int((seconds - int(seconds)) * 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
+
+
+def wrap_subtitle(text: str, max_words: int = 6) -> str:
+    words = text.split()
+    lines = []
+    for i in range(0, len(words), max_words):
+        lines.append(" ".join(words[i:i + max_words]))
+    return r"\N".join(lines)
+
+
+def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path) -> None:
+    events = estimate_subtitle_timings(parts, audio_seconds)
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {W}
+PlayResY: {H}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,74,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,1,0,0,0,100,100,0,0,1,5,2,2,80,80,180,1
+Style: Hook,Arial,86,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,6,2,2,70,70,210,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    lines = [header]
+    for item in events:
+        style = "Hook" if item["kind"] == "hook" else "Default"
+        text = html.escape(wrap_subtitle(item["text"])).replace(",", r"\,")
+        lines.append(
+            f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},{style},,0,0,0,,{text}\n"
+        )
+    out_path.write_text("".join(lines), encoding="utf-8")
+
+
+def ffprobe_duration(path: Path) -> float:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return float(proc.stdout.strip())
+
+
+def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
+    logger.info("Searching Pexels videos: %s", query)
+    r = get_session().get(
+        "https://api.pexels.com/videos/search",
+        params={"query": query, "per_page": per_page, "orientation": "portrait"},
+        headers={"Authorization": PEXELS_API_KEY},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json().get("videos", [])
+
+
+def best_video_file(video: dict) -> str | None:
+    files = video.get("video_files", [])
+    files = [f for f in files if f.get("link")]
+    if not files:
+        return None
+
+    portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
+    candidates = portrait or files
+    candidates.sort(key=lambda f: (f.get("height") or 0, f.get("width") or 0), reverse=True)
+    return candidates[0]["link"]
+
+
+def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 8) -> list[Path]:
+    topic = TOPICS[topic_name]
+    urls = []
+    random_queries = topic["queries"].copy()
+    random.shuffle(random_queries)
+
+    for query in random_queries:
+        for video in search_pexels_videos(query):
+            url = best_video_file(video)
+            if url and url not in urls:
+                urls.append(url)
+            if len(urls) >= wanted:
+                break
+        if len(urls) >= wanted:
+            break
+
+    if not urls:
+        raise RuntimeError("No Pexels videos found")
+
+    clips = []
+    session = get_session()
+    for index, url in enumerate(urls[:wanted], start=1):
+        path = tmp_dir / f"source_{index:02d}.mp4"
+        logger.info("Downloading clip %s/%s", index, len(urls[:wanted]))
+        with session.get(url, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            with path.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+        clips.append(path)
+    return clips
+
+
+def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds: float) -> list[Path]:
+    segment_seconds = 3.0
+    needed = max(6, int(target_seconds // segment_seconds) + 2)
+    segments = []
+
+    for index in range(needed):
+        src = source_clips[index % len(source_clips)]
+        out = tmp_dir / f"segment_{index:02d}.mp4"
+        duration = min(segment_seconds, max(2.0, target_seconds - index * segment_seconds))
+        vf = (
+            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},fps={FPS},setsar=1"
+        )
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-stream_loop",
+                "-1",
+                "-i",
+                str(src),
+                "-t",
+                f"{duration:.2f}",
+                "-vf",
+                vf,
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                str(out),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        segments.append(out)
+    return segments
+
+
+def concat_segments(segments: list[Path], tmp_dir: Path) -> Path:
+    list_file = tmp_dir / "segments.txt"
+    list_file.write_text(
+        "".join(f"file '{segment.as_posix()}'\n" for segment in segments),
+        encoding="utf-8",
+    )
+    out = tmp_dir / "base.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)],
+        check=True,
+        capture_output=True,
+    )
+    return out
+
+
+def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path, out_path: Path, duration: float) -> None:
+    sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
+    vf = f"subtitles='{sub_path}'"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(base_video),
+            "-i",
+            str(voiceover),
+            "-t",
+            f"{duration:.2f}",
+            "-vf",
+            vf,
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-shortest",
+            str(out_path),
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
-@dp.message(F.text == "🎲 Случайная категория")
-async def random_category(message: Message):
-    category_name = random.choice(CATEGORY_NAMES)
-    await generate_from_category(message, category_name)
+async def generate_story_video(topic_name: str) -> tuple[Path, str]:
+    tmp_dir = Path(tempfile.mkdtemp(prefix="storybot_"))
+    narration, parts = build_script(topic_name)
+    voiceover = tmp_dir / "voice.mp3"
+    subtitles = tmp_dir / "subs.ass"
+    out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
+
+    await make_voiceover(narration, voiceover)
+    audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
+    write_ass_subtitles(parts, audio_seconds, subtitles)
+
+    source_clips = await asyncio.to_thread(download_pexels_clips, topic_name, tmp_dir)
+    segments = await asyncio.to_thread(make_video_segments, source_clips, tmp_dir, audio_seconds)
+    base_video = await asyncio.to_thread(concat_segments, segments, tmp_dir)
+    await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
+
+    return out_path, narration
 
 
-@dp.message(F.text.in_(set(CATEGORY_NAMES)))
-async def category_selected(message: Message):
-    await generate_from_category(message, message.text)
-
-
-async def generate_from_category(message: Message, category_name: str):
+async def start_generation(message: Message, topic_name: str) -> None:
     user_id = message.from_user.id
-    category = CATEGORIES[category_name]
-    all_battles = category["battles"]
-
-    if user_id not in used_variants:
-        used_variants[user_id] = set()
-
-    available = [b for b in all_battles if tuple(b) not in used_variants[user_id]]
-    if len(available) < 5:
-        # Сбрасываем только эту категорию
-        used_variants[user_id] = {v for v in used_variants[user_id]
-                                   if v not in [tuple(b) for b in all_battles]}
-        available = all_battles.copy()
-
-    variants = random.sample(available, min(5, len(available)))
-    for v in variants:
-        used_variants[user_id].add(tuple(v))
-    save_used_variants(used_variants)
-
-    await message.answer(
-        f"Category: {category_name}\n\n" +
-        "\n".join(f"* {l} VS {r}" for l, r in variants)
-    )
-    await build_video_for_user(user_id, category_name, variants, message)
-
-
-@dp.callback_query(F.data == "add_to_queue")
-async def add_to_queue(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    if user_id not in pending_videos:
-        await callback.answer("Video not found.")
+    if len(active_users) >= MAX_PARALLEL_GENERATIONS and user_id not in active_users:
+        await message.answer("Сейчас уже идет генерация. Попробуй через пару минут.")
         return
 
-    await callback.answer()
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-    video_data = pending_videos.pop(user_id)
-    slot_hour, target_utc, target_day = get_next_slot(user_id)
-    slot_id = f"{target_day}_{slot_hour}"
-
-    if user_id not in publish_queue:
-        publish_queue[user_id] = []
-
-    publish_queue[user_id].append({
-        "id": slot_id, "hour_est": slot_hour,
-        "day": target_day, "target_utc": target_utc
-    })
-
-    day_str = "Today" if target_day == datetime.datetime.utcnow().date() else "Tomorrow"
-    queue_text = f"Added to queue!\n{day_str} at {slot_hour}:00 EST\n\nQueue:\n"
-    for i, s in enumerate(publish_queue[user_id], 1):
-        d = "Today" if s["day"] == datetime.datetime.utcnow().date() else "Tomorrow"
-        queue_text += f"{i}. {d} {s['hour_est']}:00 EST\n"
-
-    await callback.message.answer(queue_text)
-    asyncio.create_task(
-        delayed_publish(user_id, slot_id, video_data, target_utc, callback.message)
-    )
-
-
-@dp.callback_query(F.data == "publish_now")
-async def publish_now(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    if user_id not in pending_videos:
-        await callback.answer("Video not found.")
+    if user_id in active_users:
+        await message.answer("Твое видео уже генерируется. Дождись результата.")
         return
 
-    await callback.answer("Publishing...")
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
+    active_users.add(user_id)
+    await message.answer(f"Генерирую: {TOPICS[topic_name]['question']}\nЭто займет несколько минут.")
+    asyncio.create_task(run_generation(message, topic_name))
 
-    await callback.message.answer("Uploading to YouTube...")
+
+async def run_generation(message: Message, topic_name: str) -> None:
+    user_id = message.from_user.id
     try:
-        video_data = pending_videos.pop(user_id)
-        url = upload_to_youtube(video_data["path"], video_data["title"], video_data["description"])
-        await callback.message.answer(f"Published!\n{url}")
+        video_path, narration = await generate_story_video(topic_name)
+        await message.answer_video(
+            FSInputFile(video_path, filename="story_short.mp4"),
+            caption=f"Ready: {topic_name}",
+            supports_streaming=True,
+            request_timeout=300,
+        )
+        await message.answer(f"Voiceover text:\n\n{narration}")
     except Exception as e:
-        logger.error(f"Upload error: {e}", exc_info=True)
-        await callback.message.answer(f"Error: {e}")
+        logger.error("Generation failed: %s", e, exc_info=True)
+        await message.answer(f"Ошибка генерации: {e}")
+    finally:
+        active_users.discard(user_id)
 
 
-async def autopilot():
-    if not AUTOPILOT_ENABLED or not AUTOPILOT_USER_ID:
-        return
-
-    logger.info("Autopilot started")
-
-    while True:
-        now_utc = datetime.datetime.utcnow()
-        is_dst = 3 <= now_utc.month <= 11
-        utc_offset = 4 if is_dst else 5
-
-        next_target = None
-        next_slot = None
-
-        for slot in QUEUE_SLOTS:
-            target_hour_utc = (slot + utc_offset) % 24
-            target = now_utc.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
-            if target <= now_utc:
-                target += datetime.timedelta(days=1)
-            if next_target is None or target < next_target:
-                next_target = target
-                next_slot = slot
-
-        delay = (next_target - now_utc).total_seconds()
-        hours = int(delay // 3600)
-        mins = int((delay % 3600) // 60)
-        logger.info(f"Autopilot: next publish at {next_slot}:00 EST (in {hours}h {mins}m)")
-
-        await asyncio.sleep(delay)
-
-        try:
-            user_id = AUTOPILOT_USER_ID
-
-            # Выбираем случайную категорию
-            category_name = random.choice(CATEGORY_NAMES)
-            category = CATEGORIES[category_name]
-            all_battles = category["battles"]
-
-            if user_id not in used_variants:
-                used_variants[user_id] = set()
-
-            available = [b for b in all_battles if tuple(b) not in used_variants[user_id]]
-            if len(available) < 5:
-                used_variants[user_id] = {v for v in used_variants[user_id]
-                                           if v not in [tuple(b) for b in all_battles]}
-                available = all_battles.copy()
-
-            variants = random.sample(available, min(5, len(available)))
-            for v in variants:
-                used_variants[user_id].add(tuple(v))
-            save_used_variants(used_variants)
-
-            logger.info(f"Autopilot: {category_name} — {variants}")
-            await bot.send_message(user_id, f"Autopilot: {category_name}")
-
-            tmp_dir = tempfile.mkdtemp()
-            clip_paths = []
-
-            for idx, (left_label, right_label) in enumerate(variants, start=1):
-                left_img = fetch_image(left_label, category_name)
-                right_img = fetch_image(right_label, category_name)
-                clip_path = build_battle_clip(left_label, right_label, left_img, right_img, tmp_dir, idx)
-                clip_paths.append(clip_path)
-
-            final_path = concat_with_ffmpeg(clip_paths, tmp_dir)
-            title, description = generate_metadata(variants, category_name)
-
-            url = upload_to_youtube(final_path, title, description)
-            await bot.send_message(user_id, f"Autopilot published!\n{url}")
-            logger.info(f"Autopilot published: {url}")
-
-        except Exception as e:
-            logger.error(f"Autopilot error: {e}", exc_info=True)
-            try:
-                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
-            except Exception:
-                pass
-
-        await asyncio.sleep(60)
+@dp.message(CommandStart())
+async def start(message: Message) -> None:
+    await message.answer(
+        "Story Satisfying Bot\nВыбери рубрику, и я соберу ролик: Pexels video + English voiceover + subtitles.",
+        reply_markup=main_keyboard(),
+    )
 
 
-async def main():
+@dp.message(F.text == "🎲 Random story")
+async def random_story(message: Message) -> None:
+    await start_generation(message, random.choice(list(TOPICS.keys())))
+
+
+@dp.message(F.text.in_(set(BUTTON_TO_TOPIC.keys())))
+async def topic_selected(message: Message) -> None:
+    await start_generation(message, BUTTON_TO_TOPIC[message.text])
+
+
+@dp.message()
+async def fallback(message: Message) -> None:
+    await message.answer("Нажми кнопку с рубрикой.", reply_markup=main_keyboard())
+
+
+async def main() -> None:
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        raise RuntimeError("ffmpeg and ffprobe are required")
     await bot.delete_webhook(drop_pending_updates=True)
-    if AUTOPILOT_ENABLED:
-        asyncio.create_task(autopilot())
     await dp.start_polling(bot)
 
 
