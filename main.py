@@ -26,15 +26,25 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
-VOICE = os.getenv("VOICE", "en-US-GuyNeural")
+VOICE = os.getenv("VOICE", "en-US-ChristopherNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto").lower()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.5"))
 VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "2.0"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 W, H = 1080, 1920
 FPS = 30
 VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "42"))
 MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
+AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
+AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
+AUTOPILOT_INTERVAL_HOURS = float(os.getenv("AUTOPILOT_INTERVAL_HOURS", "6"))
+AUTOPILOT_TOPICS = [
+    topic.strip()
+    for topic in os.getenv("AUTOPILOT_TOPICS", "").split(",")
+    if topic.strip()
+]
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
@@ -165,10 +175,10 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
     topic = TOPICS[topic_name]
     stories = random.sample(topic["stories"], k=3)
     parts = [{"kind": "hook", "text": topic["question"]}]
-    for index, story in enumerate(stories, start=1):
-        parts.append({"kind": "story", "text": f"Story {index}. {story}"})
+    for story in stories:
+        parts.append({"kind": "story", "text": story})
     parts.append({"kind": "outro", "text": "Would you quit, or just pretend this was normal?"})
-    narration = " ... ".join(part["text"] for part in parts)
+    narration = "\n\n".join(part["text"] for part in parts)
     return narration, parts
 
 
@@ -185,10 +195,18 @@ async def make_voiceover(text: str, out_path: Path) -> None:
         await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
         return
 
+    if TTS_PROVIDER == "elevenlabs":
+        await asyncio.to_thread(make_voiceover_elevenlabs, text, raw_path)
+        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
+        return
+
     try:
-        await make_voiceover_edge(text, raw_path)
+        if ELEVENLABS_API_KEY:
+            await asyncio.to_thread(make_voiceover_elevenlabs, text, raw_path)
+        else:
+            await make_voiceover_edge(text, raw_path)
     except Exception as e:
-        logger.warning("edge-tts failed, falling back to gTTS: %s", e)
+        logger.warning("Primary TTS failed, falling back to gTTS: %s", e)
         await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
 
     await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
@@ -202,6 +220,33 @@ async def make_voiceover_edge(text: str, out_path: Path) -> None:
 def make_voiceover_gtts(text: str, out_path: Path) -> None:
     tts = gTTS(text=text, lang="en", tld="com", slow=False)
     tts.save(str(out_path))
+
+
+def make_voiceover_elevenlabs(text: str, out_path: Path) -> None:
+    if not ELEVENLABS_API_KEY:
+        raise RuntimeError("ELEVENLABS_API_KEY is missing")
+
+    response = get_session().post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+        headers={
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg",
+        },
+        json={
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.42,
+                "similarity_boost": 0.78,
+                "style": 0.35,
+                "use_speaker_boost": True,
+            },
+        },
+        timeout=90,
+    )
+    response.raise_for_status()
+    out_path.write_bytes(response.content)
 
 
 def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
@@ -218,6 +263,67 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
             "-filter:a",
             f"atempo={speed}",
             "-vn",
+            str(out_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+async def make_voiceover_sequence(parts: list[dict], out_path: Path, tmp_dir: Path) -> None:
+    audio_parts = []
+    transition = tmp_dir / "transition.mp3"
+    await asyncio.to_thread(make_transition_sound, transition)
+
+    for index, part in enumerate(parts):
+        if index > 0:
+            audio_parts.append(transition)
+
+        part_audio = tmp_dir / f"voice_part_{index:02d}.mp3"
+        await make_voiceover(part["text"], part_audio)
+        audio_parts.append(part_audio)
+
+    await asyncio.to_thread(concat_audio_files, audio_parts, out_path, tmp_dir)
+
+
+def make_transition_sound(out_path: Path) -> None:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=130:duration=0.18",
+            "-af",
+            "tremolo=f=24:d=0.8,volume=0.9",
+            str(out_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def concat_audio_files(audio_parts: list[Path], out_path: Path, tmp_dir: Path) -> None:
+    list_file = tmp_dir / "audio_parts.txt"
+    list_file.write_text(
+        "".join(f"file '{part.as_posix()}'\n" for part in audio_parts),
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_file),
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "4",
             str(out_path),
         ],
         check=True,
@@ -511,6 +617,54 @@ async def run_generation(message: Message, topic_name: str) -> None:
         active_users.discard(user_id)
 
 
+def choose_autopilot_topic() -> str:
+    valid_topics = [topic for topic in AUTOPILOT_TOPICS if topic in TOPICS]
+    if valid_topics:
+        return random.choice(valid_topics)
+    return random.choice(list(TOPICS.keys()))
+
+
+async def autopilot_loop() -> None:
+    if not AUTOPILOT_ENABLED:
+        return
+
+    if not AUTOPILOT_USER_ID:
+        logger.warning("AUTOPILOT_ENABLED=true, but AUTOPILOT_USER_ID is empty")
+        return
+
+    logger.info(
+        "Autopilot started: user_id=%s interval_hours=%s",
+        AUTOPILOT_USER_ID,
+        AUTOPILOT_INTERVAL_HOURS,
+    )
+
+    while True:
+        topic_name = choose_autopilot_topic()
+        try:
+            await bot.send_message(
+                AUTOPILOT_USER_ID,
+                f"Autopilot generating: {TOPICS[topic_name]['question']}",
+            )
+            video_path, narration = await generate_story_video(topic_name)
+            await bot.send_video(
+                AUTOPILOT_USER_ID,
+                FSInputFile(video_path, filename="story_short.mp4"),
+                caption=f"Autopilot ready: {topic_name}",
+                supports_streaming=True,
+                request_timeout=300,
+            )
+            await bot.send_message(AUTOPILOT_USER_ID, f"Voiceover text:\n\n{narration}")
+            logger.info("Autopilot generated video: %s", topic_name)
+        except Exception as e:
+            logger.error("Autopilot failed: %s", e, exc_info=True)
+            try:
+                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
+            except Exception:
+                pass
+
+        await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
+
+
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
     await message.answer(
@@ -538,6 +692,8 @@ async def main() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         raise RuntimeError("ffmpeg and ffprobe are required")
     await bot.delete_webhook(drop_pending_updates=True)
+    if AUTOPILOT_ENABLED:
+        asyncio.create_task(autopilot_loop())
     await dp.start_polling(bot)
 
 
