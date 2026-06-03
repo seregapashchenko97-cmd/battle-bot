@@ -28,6 +28,9 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 VOICE = os.getenv("VOICE", "en-US-GuyNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto").lower()
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.5"))
+VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "2.0"))
+SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
 W, H = 1080, 1920
 FPS = 30
 VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "42"))
@@ -48,11 +51,11 @@ TOPICS = {
         "button": "😬 Boss cringe",
         "question": "What is the cringiest thing your boss ever did?",
         "queries": [
-            "soap cutting satisfying",
-            "carpet cleaning satisfying",
-            "concrete smoothing",
-            "pressure washing satisfying",
-            "paint mixing satisfying",
+            "close up soap cutting satisfying",
+            "macro carpet cleaning satisfying",
+            "close up concrete smoothing trowel",
+            "close up pressure washing dirty surface",
+            "macro paint mixing satisfying",
         ],
         "stories": [
             "My boss made every email start with, dear workplace family. Even emails about the broken printer.",
@@ -66,11 +69,11 @@ TOPICS = {
         "button": "🏫 Weird school",
         "question": "What was the weirdest rule at your school?",
         "queries": [
-            "slime satisfying",
-            "sand cutting satisfying",
-            "soap cutting",
-            "cleaning satisfying",
-            "cake decorating satisfying",
+            "close up slime satisfying hands",
+            "macro sand cutting satisfying",
+            "close up soap cutting knife",
+            "close up cleaning satisfying scrub",
+            "macro cake decorating icing",
         ],
         "stories": [
             "My school banned backpacks because they were a distraction. So everyone carried books in laundry baskets.",
@@ -84,11 +87,11 @@ TOPICS = {
         "button": "💔 First date",
         "question": "What was your worst first date?",
         "queries": [
-            "food cutting satisfying",
-            "chocolate pouring",
-            "coffee art",
-            "soap cutting satisfying",
-            "ice cream making",
+            "close up food cutting knife satisfying",
+            "macro chocolate pouring",
+            "close up coffee latte art",
+            "close up soap cutting satisfying",
+            "macro ice cream making",
         ],
         "stories": [
             "He brought his mom. Not by accident. She sat next to us and rated my answers out of ten.",
@@ -102,11 +105,11 @@ TOPICS = {
         "button": "🧾 Got fired",
         "question": "What is the dumbest reason someone got fired?",
         "queries": [
-            "factory satisfying",
-            "machine cutting",
-            "woodworking satisfying",
-            "metal polishing satisfying",
-            "pressure washing",
+            "close up factory machine satisfying",
+            "macro machine cutting metal",
+            "close up woodworking satisfying",
+            "macro metal polishing satisfying",
+            "close up pressure washing",
         ],
         "stories": [
             "A guy got fired for being late to a meeting that got canceled before he arrived.",
@@ -120,11 +123,11 @@ TOPICS = {
         "button": "🛋 Roommate",
         "question": "What is the weirdest thing your roommate did?",
         "queries": [
-            "deep cleaning satisfying",
-            "car wash satisfying",
-            "carpet cleaning",
-            "organizing satisfying",
-            "soap cutting",
+            "close up deep cleaning satisfying",
+            "macro car wash foam satisfying",
+            "close up carpet cleaning dirty water",
+            "close up organizing satisfying hands",
+            "macro soap cutting satisfying",
         ],
         "stories": [
             "My roommate labeled every egg in the fridge with a tiny first name. Then got upset when I ate Brandon.",
@@ -170,19 +173,25 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
 
 
 async def make_voiceover(text: str, out_path: Path) -> None:
+    raw_path = out_path.with_name("voice_raw.mp3")
+
     if TTS_PROVIDER == "gtts":
-        await asyncio.to_thread(make_voiceover_gtts, text, out_path)
+        await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
+        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
         return
 
     if TTS_PROVIDER == "edge":
-        await make_voiceover_edge(text, out_path)
+        await make_voiceover_edge(text, raw_path)
+        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
         return
 
     try:
-        await make_voiceover_edge(text, out_path)
+        await make_voiceover_edge(text, raw_path)
     except Exception as e:
         logger.warning("edge-tts failed, falling back to gTTS: %s", e)
-        await asyncio.to_thread(make_voiceover_gtts, text, out_path)
+        await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
+
+    await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
 
 
 async def make_voiceover_edge(text: str, out_path: Path) -> None:
@@ -195,6 +204,27 @@ def make_voiceover_gtts(text: str, out_path: Path) -> None:
     tts.save(str(out_path))
 
 
+def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
+    if abs(speed - 1.0) < 0.01:
+        shutil.copyfile(input_path, out_path)
+        return
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-filter:a",
+            f"atempo={speed}",
+            "-vn",
+            str(out_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
 def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
     weights = [max(4, len(part["text"].split())) for part in parts]
     weight_total = sum(weights)
@@ -204,10 +234,14 @@ def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[d
 
     for part, weight in zip(parts, weights):
         duration = usable * weight / weight_total
-        start = cursor
-        end = min(total_seconds - 0.2, cursor + duration)
-        result.append({"start": start, "end": end, "text": part["text"], "kind": part["kind"]})
-        cursor = end
+        chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
+        chunk_duration = max(0.55, duration / max(1, len(chunks)))
+
+        for chunk in chunks:
+            start = cursor
+            end = min(total_seconds - 0.2, cursor + chunk_duration)
+            result.append({"start": start, "end": end, "text": chunk, "kind": part["kind"]})
+            cursor = end
     return result
 
 
@@ -220,12 +254,13 @@ def ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
 
-def wrap_subtitle(text: str, max_words: int = 6) -> str:
+def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
     words = text.split()
-    lines = []
-    for i in range(0, len(words), max_words):
-        lines.append(" ".join(words[i:i + max_words]))
-    return r"\N".join(lines)
+    return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
+
+
+def wrap_subtitle(text: str) -> str:
+    return r"\N".join(chunk_subtitle_text(text, max(2, SUBTITLE_WORDS)))
 
 
 def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path) -> None:
@@ -237,8 +272,8 @@ PlayResY: {H}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,74,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,1,0,0,0,100,100,0,0,1,5,2,2,80,80,180,1
-Style: Hook,Arial,86,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,6,2,2,70,70,210,1
+Style: Default,Arial,118,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,8,3,5,70,70,0,1
+Style: Hook,Arial,126,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,9,3,5,70,70,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -246,7 +281,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     lines = [header]
     for item in events:
         style = "Hook" if item["kind"] == "hook" else "Default"
-        text = html.escape(wrap_subtitle(item["text"])).replace(",", r"\,")
+        text = html.escape(item["text"]).replace(",", r"\,")
         lines.append(
             f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},{style},,0,0,0,,{text}\n"
         )
@@ -276,7 +311,7 @@ def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
     logger.info("Searching Pexels videos: %s", query)
     r = get_session().get(
         "https://api.pexels.com/videos/search",
-        params={"query": query, "per_page": per_page, "orientation": "portrait"},
+        params={"query": query, "per_page": per_page},
         headers={"Authorization": PEXELS_API_KEY},
         timeout=30,
     )
@@ -331,17 +366,18 @@ def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 8) -> li
 
 
 def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds: float) -> list[Path]:
-    segment_seconds = 3.0
+    segment_seconds = 1.6
     needed = max(6, int(target_seconds // segment_seconds) + 2)
     segments = []
 
     for index in range(needed):
         src = source_clips[index % len(source_clips)]
         out = tmp_dir / f"segment_{index:02d}.mp4"
-        duration = min(segment_seconds, max(2.0, target_seconds - index * segment_seconds))
+        duration = min(segment_seconds, max(0.8, target_seconds - index * segment_seconds))
+        input_duration = duration * VIDEO_SPEED
         vf = (
-            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},fps={FPS},setsar=1"
+            f"scale={int(W * 1.22)}:{int(H * 1.22)}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
         )
         subprocess.run(
             [
@@ -352,7 +388,7 @@ def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds:
                 "-i",
                 str(src),
                 "-t",
-                f"{duration:.2f}",
+                f"{input_duration:.2f}",
                 "-vf",
                 vf,
                 "-an",
