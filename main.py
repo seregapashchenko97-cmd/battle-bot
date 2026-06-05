@@ -13,7 +13,12 @@ import edge_tts
 import requests
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import (
+    FSInputFile,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
 from gtts import gTTS
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -52,6 +57,7 @@ YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
 YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 
 W, H = 1080, 1920
 FPS = 30
@@ -63,7 +69,11 @@ if not PEXELS_API_KEY:
 
 bot = Bot(BOT_TOKEN, request_timeout=300)
 dp = Dispatcher()
-active_users = set()
+active_users: set[int] = set()
+
+# Stores last generated video per user for "Publish now" button
+# { user_id: {"path": Path, "topic": str, "narration": str} }
+last_generated: dict[int, dict] = {}
 
 
 STICKY_QUERIES = [
@@ -589,10 +599,15 @@ TOPICS[FRESH_TOPIC_NAME] = {
 
 BUTTON_TO_TOPIC = {topic["button"]: name for name, topic in TOPICS.items()}
 
+BTN_PUBLISH = "📤 Опубликовать на YouTube"
+BTN_RANDOM = "🎲 Random story"
 
-def main_keyboard() -> ReplyKeyboardMarkup:
+
+def main_keyboard(show_publish: bool = False) -> ReplyKeyboardMarkup:
     buttons = [[KeyboardButton(text=topic["button"])] for topic in TOPICS.values()]
-    buttons.append([KeyboardButton(text="Random story")])
+    buttons.append([KeyboardButton(text=BTN_RANDOM)])
+    if show_publish and YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN:
+        buttons.append([KeyboardButton(text=BTN_PUBLISH)])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -618,12 +633,10 @@ def clean_caption_text(text: str) -> str:
 
 def choose_fresh_confession() -> dict:
     global RECENT_HOOKS
-
     candidates = [item for item in FRESH_CONFESSIONS if item["hook"] not in RECENT_HOOKS]
     if not candidates:
         RECENT_HOOKS = []
         candidates = FRESH_CONFESSIONS.copy()
-
     confession = random.choice(candidates)
     RECENT_HOOKS.append(confession["hook"])
     RECENT_HOOKS = RECENT_HOOKS[-8:]
@@ -642,7 +655,6 @@ def extend_story_parts(parts: list[dict], topic_label: str) -> None:
     used = {part["text"] for part in parts}
     lines = ESCALATION_LINES.copy()
     random.shuffle(lines)
-
     insert_at = next((i for i, part in enumerate(parts) if part["kind"] == "twist"), max(1, len(parts) - 2))
     for line in lines:
         if count_part_words(parts) >= STORY_TARGET_WORDS:
@@ -665,9 +677,7 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
         confession = random.choice(topic["confessions"])
         topic_label = topic["label"]
 
-    parts = [
-        {"kind": "hook", "label": topic_label, "text": confession["hook"]},
-    ]
+    parts = [{"kind": "hook", "label": topic_label, "text": confession["hook"]}]
     for beat in confession["beats"]:
         parts.append({"kind": "story", "label": topic_label, "text": beat})
     parts.append({"kind": "twist", "label": "wait for it", "text": confession["twist"]})
@@ -678,6 +688,8 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
     narration = "\n".join(part["text"] for part in parts)
     return narration, parts
 
+
+# ── TTS ───────────────────────────────────────────────────────────────────────
 
 async def make_voiceover(text: str, out_path: Path) -> None:
     raw_path = out_path.with_name(f"{out_path.stem}_raw.mp3")
@@ -704,25 +716,20 @@ async def make_voiceover(text: str, out_path: Path) -> None:
 
 
 async def make_voiceover_edge(text: str, out_path: Path) -> None:
-    """Try edge-tts with up to 3 retries, then fall back to gTTS if allowed."""
+    # Strip accidental trailing dot/space from env var
+    voice = VOICE.strip().rstrip(".")
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            communicate = edge_tts.Communicate(text, VOICE, rate=EDGE_RATE, pitch=EDGE_PITCH)
+            communicate = edge_tts.Communicate(text, voice, rate=EDGE_RATE, pitch=EDGE_PITCH)
             await communicate.save(str(out_path))
             return
-        except edge_tts.exceptions.NoAudioReceived as e:
-            last_error = e
-            wait = 2 ** attempt
-            logger.warning("edge-tts NoAudioReceived (attempt %d/3), retrying in %ds", attempt + 1, wait)
-            await asyncio.sleep(wait)
         except Exception as e:
             last_error = e
             wait = 2 ** attempt
             logger.warning("edge-tts error (attempt %d/3): %s, retrying in %ds", attempt + 1, e, wait)
             await asyncio.sleep(wait)
 
-    # All retries exhausted
     if ALLOW_GTTS_FALLBACK:
         logger.warning("edge-tts failed after 3 attempts, falling back to gTTS: %s", last_error)
         await asyncio.to_thread(make_voiceover_gtts, text, out_path)
@@ -738,7 +745,6 @@ def make_voiceover_gtts(text: str, out_path: Path) -> None:
 def make_voiceover_elevenlabs(text: str, out_path: Path) -> None:
     if not ELEVENLABS_API_KEY:
         raise RuntimeError("ELEVENLABS_API_KEY is missing")
-
     response = get_session().post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
         headers={
@@ -766,7 +772,6 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
     if abs(speed - 1.0) < 0.01:
         shutil.copyfile(input_path, out_path)
         return
-
     filters = []
     remaining = speed
     while remaining > 2.0:
@@ -776,7 +781,6 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
         filters.append("atempo=0.5")
         remaining /= 0.5
     filters.append(f"atempo={remaining:.3f}")
-
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(input_path), "-filter:a", ",".join(filters), "-vn", str(out_path)],
         check=True,
@@ -788,17 +792,18 @@ def ensure_min_audio_duration(audio_path: Path, tmp_dir: Path) -> None:
     duration = ffprobe_duration(audio_path)
     if duration >= MIN_AUDIO_SECONDS:
         return
-
     speed = max(0.35, duration / MIN_AUDIO_SECONDS)
     stretched = tmp_dir / "voice_stretched.mp3"
     speed_audio(audio_path, stretched, speed)
     shutil.copyfile(stretched, audio_path)
 
 
+# ── Subtitles ─────────────────────────────────────────────────────────────────
+
 def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
     words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
-    chunks = []
-    current = []
+    chunks: list[str] = []
+    current: list[str] = []
     for token in words:
         if re.fullmatch(r"[!?.,]", token):
             if current:
@@ -817,22 +822,19 @@ def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[d
     weights = [max(3, len(clean_caption_text(part["text"]).split())) for part in parts]
     usable = max(8, total_seconds - 0.45)
     cursor = 0.12
-    events = []
-
+    events: list[dict] = []
     for part, weight in zip(parts, weights):
         part_duration = usable * weight / sum(weights)
         chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
         chunk_duration = max(0.42, part_duration / max(1, len(chunks)))
         part_start = cursor
         part_end = min(total_seconds - 0.12, cursor + part_duration)
-        events.append(
-            {
-                "start": part_start,
-                "end": min(part_end, part_start + 2.7),
-                "text": part["label"].upper(),
-                "kind": "label",
-            }
-        )
+        events.append({
+            "start": part_start,
+            "end": min(part_end, part_start + 2.7),
+            "text": part["label"].upper(),
+            "kind": "label",
+        })
         for chunk in chunks:
             start = cursor
             end = min(total_seconds - 0.1, cursor + chunk_duration)
@@ -861,7 +863,6 @@ def color_caption(text: str, kind: str) -> str:
     text = ass_escape(text)
     if kind in {"hook", "twist"}:
         return r"{\c&H00FFFF&}" + text + r"{\c&HFFFFFF&}"
-
     words = text.split()
     if len(words) < 2:
         return text
@@ -901,26 +902,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         else:
             style = "Default"
             text = color_caption(item["text"], item["kind"])
-
         lines.append(f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},{style},,0,0,0,,{text}\n")
     out_path.write_text("".join(lines), encoding="utf-8")
 
 
+# ── FFmpeg helpers ────────────────────────────────────────────────────────────
+
 def ffprobe_duration(path: Path) -> float:
     proc = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        check=True, capture_output=True, text=True,
     )
     return float(proc.stdout.strip())
 
@@ -941,28 +933,18 @@ def best_video_file(video: dict) -> str | None:
     files = [f for f in video.get("video_files", []) if f.get("link")]
     if not files:
         return None
-
     portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
     strong = [f for f in portrait if (f.get("height") or 0) >= 1280 and (f.get("width") or 0) >= 720]
     candidates = strong or portrait or files
-    candidates.sort(
-        key=lambda f: (
-            f.get("height") or 0,
-            f.get("width") or 0,
-            f.get("fps") or 0,
-            f.get("size") or 0,
-        ),
-        reverse=True,
-    )
+    candidates.sort(key=lambda f: (f.get("height") or 0, f.get("width") or 0, f.get("fps") or 0, f.get("size") or 0), reverse=True)
     return candidates[0]["link"]
 
 
 def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 10) -> list[Path]:
     topic = TOPICS[topic_name]
-    urls = []
+    urls: list[str] = []
     queries = topic["queries"] + random.sample(STICKY_QUERIES, k=min(4, len(STICKY_QUERIES)))
     random.shuffle(queries)
-
     for query in queries:
         for video in search_pexels_videos(query):
             url = best_video_file(video)
@@ -972,11 +954,9 @@ def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 10) -> l
                 break
         if len(urls) >= wanted:
             break
-
     if not urls:
         raise RuntimeError("No Pexels videos found")
-
-    clips = []
+    clips: list[Path] = []
     session = get_session()
     for index, url in enumerate(urls[:wanted], start=1):
         path = tmp_dir / f"source_{index:02d}.mp4"
@@ -994,8 +974,7 @@ def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 10) -> l
 def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds: float) -> list[Path]:
     segment_seconds = 1.15
     needed = max(8, int(target_seconds // segment_seconds) + 2)
-    segments = []
-
+    segments: list[Path] = []
     for index in range(needed):
         src = source_clips[index % len(source_clips)]
         out = tmp_dir / f"segment_{index:02d}.mp4"
@@ -1005,10 +984,9 @@ def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds:
             src_duration = ffprobe_duration(src)
         except Exception:
             src_duration = 0
-        seek = 0
+        seek = 0.0
         if src_duration > input_duration + 2.5:
             seek = random.uniform(0.4, src_duration - input_duration - 0.4)
-
         vf = (
             f"scale={W}:{H}:force_original_aspect_ratio=increase,"
             f"crop={W}:{H},"
@@ -1018,24 +996,8 @@ def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds:
         cmd = ["ffmpeg", "-y"]
         if seek:
             cmd += ["-ss", f"{seek:.2f}"]
-        cmd += [
-            "-stream_loop",
-            "-1",
-            "-i",
-            str(src),
-            "-t",
-            f"{input_duration:.2f}",
-            "-vf",
-            vf,
-            "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
-            str(out),
-        ]
+        cmd += ["-stream_loop", "-1", "-i", str(src), "-t", f"{input_duration:.2f}",
+                "-vf", vf, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)]
         subprocess.run(cmd, check=True, capture_output=True)
         segments.append(out)
     return segments
@@ -1043,46 +1005,22 @@ def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds:
 
 def concat_segments(segments: list[Path], tmp_dir: Path) -> Path:
     list_file = tmp_dir / "segments.txt"
-    list_file.write_text("".join(f"file '{segment.as_posix()}'\n" for segment in segments), encoding="utf-8")
+    list_file.write_text("".join(f"file '{s.as_posix()}'\n" for s in segments), encoding="utf-8")
     out = tmp_dir / "base.mp4"
-    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)], check=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)],
+                   check=True, capture_output=True)
     return out
 
 
 def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path, out_path: Path, duration: float) -> None:
     sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
-    vf = f"subtitles='{sub_path}'"
     subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(base_video),
-            "-i",
-            str(voiceover),
-            "-t",
-            f"{duration:.2f}",
-            "-vf",
-            vf,
-            "-map",
-            "0:v",
-            "-map",
-            "1:a",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-shortest",
-            str(out_path),
-        ],
-        check=True,
-        capture_output=True,
+        ["ffmpeg", "-y", "-i", str(base_video), "-i", str(voiceover),
+         "-t", f"{duration:.2f}", "-vf", f"subtitles='{sub_path}'",
+         "-map", "0:v", "-map", "1:a",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_path)],
+        check=True, capture_output=True,
     )
 
 
@@ -1106,54 +1044,50 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     return out_path, narration
 
 
+# ── YouTube ───────────────────────────────────────────────────────────────────
+
 def make_youtube_metadata(topic_name: str, narration: str) -> tuple[str, str, list[str]]:
-    first_line = clean_caption_text(narration.splitlines()[0] if narration.splitlines() else TOPICS[topic_name]["question"])
-    title = first_line[:88].rstrip(" .,!?:;")
+    lines = [l for l in narration.splitlines() if l.strip()]
+    hook = clean_caption_text(lines[0]) if lines else TOPICS[topic_name]["question"]
+
+    title = hook[:88].rstrip(" .,!?:;")
     if "#shorts" not in title.lower():
         title = f"{title} #shorts"
 
+    hashtags = "#shorts #storytime #drama #confession #redditstories #fyp #viral #truestory #familydrama #cheating"
     description = (
-        f"{first_line}\n\n"
-        "Anonymous story with a twist.\n\n"
-        "#shorts #storytime #redditstories #drama #confession"
+        f"{hook}\n\n"
+        "Anonymous story with a twist. Would you believe this happened?\n\n"
+        f"{hashtags}"
     )
-    tags = [
-        "shorts",
-        "storytime",
-        "reddit stories",
-        "drama",
-        "confession",
-        "family drama",
-        "cheating story",
-        "true story",
-    ]
+    tags = ["shorts", "storytime", "reddit stories", "drama", "confession",
+            "family drama", "cheating story", "true story", "fyp", "viral"]
     return title, description, tags
 
 
 def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
     if not (YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN):
-        raise RuntimeError(
-            "YouTube upload needs YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN"
-        )
+        raise RuntimeError("YouTube upload needs YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN")
 
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 
-    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
     credentials = Credentials(
         token=None,
         refresh_token=YOUTUBE_REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=YOUTUBE_CLIENT_ID,
         client_secret=YOUTUBE_CLIENT_SECRET,
-        scopes=scopes,
+        scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
     credentials.refresh(Request())
 
     youtube = build("youtube", "v3", credentials=credentials)
     title, description, tags = make_youtube_metadata(topic_name, narration)
+
+    logger.info("Uploading to YouTube: %s", title)
     media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
     request = youtube.videos().insert(
         part="snippet,status",
@@ -1171,27 +1105,31 @@ def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
         },
         media_body=media,
     )
-
     response = None
     while response is None:
         _, response = request.next_chunk()
 
     video_id = response["id"]
-    return f"https://www.youtube.com/watch?v={video_id}"
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    logger.info("YouTube upload done: %s", url)
+    return url
 
+
+# ── Bot logic ─────────────────────────────────────────────────────────────────
 
 async def start_generation(message: Message, topic_name: str) -> None:
     user_id = message.from_user.id
     if len(active_users) >= MAX_PARALLEL_GENERATIONS and user_id not in active_users:
         await message.answer("Сейчас уже идет генерация. Попробуй через пару минут.")
         return
-
     if user_id in active_users:
         await message.answer("Твое видео уже генерируется. Дождись результата.")
         return
-
     active_users.add(user_id)
-    await message.answer(f"Генерирую: {TOPICS[topic_name]['question']}\nЭто займет несколько минут.")
+    await message.answer(
+        f"⏳ Генерирую: {TOPICS[topic_name]['question']}\nЭто займет несколько минут.",
+        reply_markup=main_keyboard(show_publish=False),
+    )
     asyncio.create_task(run_generation(message, topic_name))
 
 
@@ -1199,25 +1137,38 @@ async def run_generation(message: Message, topic_name: str) -> None:
     user_id = message.from_user.id
     try:
         video_path, narration = await generate_story_video(topic_name)
+        title, description, tags = make_youtube_metadata(topic_name, narration)
+
+        # Save for manual "publish now"
+        last_generated[user_id] = {"path": video_path, "topic": topic_name, "narration": narration}
+
+        caption = (
+            f"✅ <b>Готово:</b> {topic_name}\n\n"
+            f"<b>Название:</b> {title}\n\n"
+            f"<b>Описание:</b>\n{description}"
+        )
         await message.answer_video(
             FSInputFile(video_path, filename="story_short.mp4"),
-            caption=f"Ready: {topic_name}",
+            caption=caption,
+            parse_mode="HTML",
             supports_streaming=True,
             request_timeout=300,
         )
-        await message.answer(f"Voiceover text:\n\n{narration}")
+        await message.answer(
+            f"📝 <b>Текст озвучки:</b>\n\n{narration}",
+            parse_mode="HTML",
+            reply_markup=main_keyboard(show_publish=True),
+        )
     except Exception as e:
         logger.error("Generation failed: %s", e, exc_info=True)
-        await message.answer(f"Ошибка генерации: {e}")
+        await message.answer(f"❌ Ошибка генерации: {e}", reply_markup=main_keyboard())
     finally:
         active_users.discard(user_id)
 
 
 def choose_autopilot_topic() -> str:
-    valid_topics = [topic for topic in AUTOPILOT_TOPICS if topic in TOPICS]
-    if valid_topics:
-        return random.choice(valid_topics)
-    return FRESH_TOPIC_NAME
+    valid_topics = [t for t in AUTOPILOT_TOPICS if t in TOPICS]
+    return random.choice(valid_topics) if valid_topics else FRESH_TOPIC_NAME
 
 
 async def autopilot_loop() -> None:
@@ -1232,9 +1183,10 @@ async def autopilot_loop() -> None:
         topic_name = choose_autopilot_topic()
         try:
             if AUTOPILOT_USER_ID:
-                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot generating: {TOPICS[topic_name]['question']}")
+                await bot.send_message(AUTOPILOT_USER_ID, f"🤖 Autopilot generating: {TOPICS[topic_name]['question']}")
 
             video_path, narration = await generate_story_video(topic_name)
+            title, description, tags = make_youtube_metadata(topic_name, narration)
 
             youtube_url = ""
             if youtube_mode:
@@ -1242,22 +1194,30 @@ async def autopilot_loop() -> None:
                 logger.info("Uploaded to YouTube: %s", youtube_url)
 
             if AUTOPILOT_USER_ID:
-                caption = f"Autopilot ready: {topic_name}"
-                if youtube_url:
-                    caption += f"\nYouTube: {youtube_url}"
+                caption = (
+                    f"✅ <b>Autopilot готово:</b> {topic_name}\n\n"
+                    f"<b>Название:</b> {title}\n"
+                    + (f"<b>YouTube:</b> {youtube_url}\n" if youtube_url else "")
+                    + f"\n<b>Описание:</b>\n{description}"
+                )
                 await bot.send_video(
                     AUTOPILOT_USER_ID,
                     FSInputFile(video_path, filename="story_short.mp4"),
                     caption=caption,
+                    parse_mode="HTML",
                     supports_streaming=True,
                     request_timeout=300,
                 )
-                await bot.send_message(AUTOPILOT_USER_ID, f"Voiceover text:\n\n{narration}")
+                await bot.send_message(
+                    AUTOPILOT_USER_ID,
+                    f"📝 <b>Текст озвучки:</b>\n\n{narration}",
+                    parse_mode="HTML",
+                )
         except Exception as e:
             logger.error("Autopilot failed: %s", e, exc_info=True)
             if AUTOPILOT_USER_ID:
                 try:
-                    await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
+                    await bot.send_message(AUTOPILOT_USER_ID, f"❌ Autopilot error: {e}")
                 except Exception:
                     pass
         await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
@@ -1268,15 +1228,49 @@ async def autopilot_loop() -> None:
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "👋 Story Satisfying Bot\n\n"
+        "👋 <b>Story Satisfying Bot</b>\n\n"
         "Выбери тему — я соберу короткий ролик:\n"
         "сильный хук • мужская озвучка • субтитры • залипательный фон.\n\n"
-        "Нажми любую кнопку ниже 👇",
+        "Нажми кнопку ниже 👇",
+        parse_mode="HTML",
         reply_markup=main_keyboard(),
     )
 
 
-@dp.message(F.text == "Random story")
+@dp.message(F.text == BTN_PUBLISH)
+async def publish_now(message: Message) -> None:
+    user_id = message.from_user.id
+    data = last_generated.get(user_id)
+    if not data:
+        await message.answer("Нет готового видео. Сначала сгенерируй ролик.")
+        return
+    if not (YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN):
+        await message.answer(
+            "YouTube не настроен.\n"
+            "Добавь переменные: YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN"
+        )
+        return
+
+    await message.answer("⏳ Публикую на YouTube...")
+    try:
+        youtube_url = await asyncio.to_thread(
+            upload_to_youtube, data["path"], data["topic"], data["narration"]
+        )
+        title, description, _ = make_youtube_metadata(data["topic"], data["narration"])
+        await message.answer(
+            f"✅ <b>Опубликовано!</b>\n\n"
+            f"🔗 {youtube_url}\n\n"
+            f"<b>Название:</b> {title}\n\n"
+            f"<b>Описание:</b>\n{description}",
+            parse_mode="HTML",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        logger.error("Manual publish failed: %s", e, exc_info=True)
+        await message.answer(f"❌ Ошибка публикации: {e}", reply_markup=main_keyboard())
+
+
+@dp.message(F.text == BTN_RANDOM)
 async def random_story(message: Message) -> None:
     await start_generation(message, FRESH_TOPIC_NAME)
 
