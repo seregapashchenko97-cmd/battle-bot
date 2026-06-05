@@ -1,6 +1,5 @@
 import asyncio
 import html
-import json
 import logging
 import os
 import random
@@ -28,23 +27,21 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 VOICE = os.getenv("VOICE", "en-US-ChristopherNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto").lower()
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.5"))
-VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "2.0"))
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.32"))
+VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "1.35"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
-W, H = 1080, 1920
-FPS = 30
-VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "42"))
+VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "48"))
 MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_INTERVAL_HOURS = float(os.getenv("AUTOPILOT_INTERVAL_HOURS", "6"))
-AUTOPILOT_TOPICS = [
-    topic.strip()
-    for topic in os.getenv("AUTOPILOT_TOPICS", "").split(",")
-    if topic.strip()
-]
+AUTOPILOT_TOPICS = [x.strip() for x in os.getenv("AUTOPILOT_TOPICS", "").split(",") if x.strip()]
+
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+
+W, H = 1080, 1920
+FPS = 30
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
@@ -56,95 +53,251 @@ dp = Dispatcher()
 active_users = set()
 
 
+STICKY_QUERIES = [
+    "pov cooking close up hands",
+    "street food cooking close up",
+    "knife cutting vegetables close up",
+    "steak cooking close up",
+    "macro cake decorating icing",
+    "coffee pouring close up",
+    "chocolate pouring close up",
+    "satisfying cleaning close up",
+    "soap cutting close up",
+    "car detailing close up",
+]
+
+
 TOPICS = {
-    "Boss cringe": {
-        "button": "😬 Boss cringe",
-        "question": "What is the cringiest thing your boss ever did?",
+    "Cheating texts": {
+        "button": "Cheating texts",
+        "label": "anonymous confession",
+        "question": "I found deleted texts from my wife. Then I checked the dates.",
         "queries": [
-            "close up soap cutting satisfying",
-            "macro carpet cleaning satisfying",
-            "close up concrete smoothing trowel",
-            "close up pressure washing dirty surface",
-            "macro paint mixing satisfying",
+            "phone texting close up dark",
+            "pov cooking close up hands",
+            "knife cutting vegetables close up",
+            "coffee pouring close up",
+            "street food cooking close up",
         ],
-        "stories": [
-            "My boss made every email start with, dear workplace family. Even emails about the broken printer.",
-            "One manager created a fun jar. If you looked tired, you had to pull a note. Mine said, do ten jumping jacks and compliment the CEO.",
-            "A boss announced Hawaiian shirt Friday. Then he wrote up everyone who wore one because it was too distracting.",
-            "My old boss made us clap when he entered the room. By Friday, people started taking lunch before he arrived.",
-            "One boss installed a dress code for beach day. It was a normal Monday. He was the only person who showed up in swim shorts.",
+        "confessions": [
+            {
+                "hook": "I found deleted texts from my wife. One name kept showing up.",
+                "beats": [
+                    "At first I thought it was spam.",
+                    "Then I saw the dates.",
+                    "Every message was from nights she said she was with her sister.",
+                    "I did not confront her.",
+                    "I texted the number from my work phone.",
+                    "A man replied with our wedding photo.",
+                ],
+                "twist": "He was not her boyfriend. He was my brother.",
+                "closer": "Now the family group chat is silent.",
+            },
+            {
+                "hook": "My wife asked why I was quiet at dinner. I was reading her second phone.",
+                "beats": [
+                    "She hid it inside an old boot box.",
+                    "The first chat said baby.",
+                    "The second chat had our address.",
+                    "The third chat was worse.",
+                    "It was a plan to move out while I was at work.",
+                ],
+                "twist": "She forgot the phone was still sharing location with our car.",
+                "closer": "I packed my own bags first.",
+            },
         ],
     },
-    "Weird school": {
-        "button": "🏫 Weird school",
-        "question": "What was the weirdest rule at your school?",
+    "DNA test": {
+        "button": "DNA test",
+        "label": "family secret",
+        "question": "My sister bought everyone DNA tests. One result ruined dinner.",
         "queries": [
-            "close up slime satisfying hands",
-            "macro sand cutting satisfying",
-            "close up soap cutting knife",
-            "close up cleaning satisfying scrub",
-            "macro cake decorating icing",
+            "family dinner table close up",
+            "pov cooking close up",
+            "cutting fruit close up",
+            "cake decorating close up",
+            "hands washing dishes close up",
         ],
-        "stories": [
-            "My school banned backpacks because they were a distraction. So everyone carried books in laundry baskets.",
-            "A teacher made us ask permission to sharpen pencils. Then got mad because everyone kept interrupting class.",
-            "Our principal banned running in the hallway. Then made us do a timed evacuation drill.",
-            "They banned hoodies for safety. But the mascot costume had a giant hood and was somehow fine.",
-            "One teacher said blue pens were disrespectful. Nobody knew why. She just called them aggressive.",
+        "confessions": [
+            {
+                "hook": "My sister bought DNA tests as a joke. Nobody laughed after mine came back.",
+                "beats": [
+                    "Dad said the website was probably wrong.",
+                    "Mom got very quiet.",
+                    "My sister kept refreshing the page.",
+                    "My closest match was not anyone at the table.",
+                    "It was our neighbor.",
+                ],
+                "twist": "Dad already knew. He had known for twenty years.",
+                "closer": "The neighbor sent me a friend request that night.",
+            },
+            {
+                "hook": "A DNA test said my twin and I were not related.",
+                "beats": [
+                    "We thought it was a lab mistake.",
+                    "Then my mom started crying.",
+                    "She said the hospital called once.",
+                    "Dad made her hang up.",
+                    "He said it was better if nobody knew.",
+                ],
+                "twist": "My real twin lives three towns away.",
+                "closer": "We met last week. Same laugh. Different life.",
+            },
         ],
     },
-    "First date": {
-        "button": "💔 First date",
-        "question": "What was your worst first date?",
+    "Secret revenge": {
+        "button": "Secret revenge",
+        "label": "petty revenge",
+        "question": "My boss fired me by email. He forgot I still had one password.",
         "queries": [
-            "close up food cutting knife satisfying",
-            "macro chocolate pouring",
-            "close up coffee latte art",
-            "close up soap cutting satisfying",
-            "macro ice cream making",
+            "office desk close up typing",
+            "keyboard typing close up",
+            "coffee spilling close up",
+            "satisfying cleaning desk close up",
+            "woodworking close up",
         ],
-        "stories": [
-            "He brought his mom. Not by accident. She sat next to us and rated my answers out of ten.",
-            "She asked me my credit score before the appetizers came. Then said mine had backup character energy.",
-            "He took me to a restaurant where he worked, then asked his manager for an employee discount mid-date.",
-            "She spent twenty minutes explaining her ex's workout routine. I still do not know her favorite color.",
-            "He said he forgot his wallet. Then ordered the most expensive steak and called it a trust exercise.",
+        "confessions": [
+            {
+                "hook": "My boss fired me by email. He forgot I still had one password.",
+                "beats": [
+                    "I did not delete anything.",
+                    "I did not leak anything.",
+                    "I just opened the shared calendar.",
+                    "Every meeting he skipped had notes.",
+                    "Every note said who actually did the work.",
+                    "I invited the CEO.",
+                ],
+                "twist": "He replied all before he noticed the guest list.",
+                "closer": "By lunch, I was invited back.",
+            },
+            {
+                "hook": "My manager stole my idea. So I let him present it exactly as written.",
+                "beats": [
+                    "The first slide looked normal.",
+                    "The second slide had fake numbers.",
+                    "The third slide asked one question.",
+                    "Do you know what this product does.",
+                    "He said yes.",
+                    "Then clicked the next slide.",
+                ],
+                "twist": "It said, this was a loyalty test.",
+                "closer": "HR asked me for the real deck.",
+            },
         ],
     },
-    "Got fired": {
-        "button": "🧾 Got fired",
-        "question": "What is the dumbest reason someone got fired?",
+    "Wedding disaster": {
+        "button": "Wedding disaster",
+        "label": "wedding chaos",
+        "question": "The bride stopped walking down the aisle when she saw row three.",
         "queries": [
-            "close up factory machine satisfying",
-            "macro machine cutting metal",
-            "close up woodworking satisfying",
-            "macro metal polishing satisfying",
-            "close up pressure washing",
+            "wedding table close up",
+            "flower arrangement close up",
+            "cake decorating close up",
+            "champagne pouring close up",
+            "pov cooking close up hands",
         ],
-        "stories": [
-            "A guy got fired for being late to a meeting that got canceled before he arrived.",
-            "Someone got fired for eating a donut from the break room. The donut was from the box he brought.",
-            "My coworker got written up for not smiling during a power outage.",
-            "A manager fired someone for using too many sticky notes. The next week they launched a productivity board.",
-            "One employee got fired for replying okay too quickly. The boss said it felt sarcastic.",
+        "confessions": [
+            {
+                "hook": "The bride stopped walking down the aisle when she saw row three.",
+                "beats": [
+                    "Nobody understood why.",
+                    "Then the groom turned around.",
+                    "His ex was sitting with his mother.",
+                    "Wearing white.",
+                    "Holding a baby.",
+                    "The baby had the groom's name as a bracelet.",
+                ],
+                "twist": "The bride smiled and handed the bouquet to the ex.",
+                "closer": "Then she walked out alone.",
+            },
+            {
+                "hook": "My cousin's wedding ended before the vows.",
+                "beats": [
+                    "The best man gave a speech too early.",
+                    "He said he could not keep lying.",
+                    "The room went silent.",
+                    "The groom grabbed the microphone.",
+                    "The bride just nodded.",
+                ],
+                "twist": "She already knew. The speech was her proof.",
+                "closer": "The reception became a divorce party.",
+            },
         ],
     },
-    "Roommate": {
-        "button": "🛋 Roommate",
-        "question": "What is the weirdest thing your roommate did?",
+    "Neighbor camera": {
+        "button": "Neighbor camera",
+        "label": "creepy neighbor",
+        "question": "My neighbor sent me a photo of my kitchen. I live alone.",
         "queries": [
-            "close up deep cleaning satisfying",
-            "macro car wash foam satisfying",
-            "close up carpet cleaning dirty water",
-            "close up organizing satisfying hands",
-            "macro soap cutting satisfying",
+            "apartment kitchen close up",
+            "door lock close up",
+            "cleaning kitchen close up",
+            "pov cooking close up",
+            "night window rain close up",
         ],
-        "stories": [
-            "My roommate labeled every egg in the fridge with a tiny first name. Then got upset when I ate Brandon.",
-            "He vacuumed at 3 AM because he said dust is most vulnerable at night.",
-            "She kept a spreadsheet of who opened the fridge. We were two people.",
-            "My roommate washed paper plates because he said disposable was a mindset.",
-            "He used the oven as a sock drawer. I found out while preheating pizza.",
+        "confessions": [
+            {
+                "hook": "My neighbor sent me a photo of my kitchen. I live alone.",
+                "beats": [
+                    "He said my window was open.",
+                    "It was not.",
+                    "The photo was from inside.",
+                    "I checked the cabinets.",
+                    "Then I saw a small red light under the sink.",
+                ],
+                "twist": "The camera was connected to my landlord's Wi-Fi.",
+                "closer": "I moved out before sunset.",
+            },
+            {
+                "hook": "The woman next door knew what I cooked every night.",
+                "beats": [
+                    "I thought she smelled it.",
+                    "Then she mentioned the brand of pan.",
+                    "I never told her.",
+                    "I put tape over my window.",
+                    "That night she texted, bad angle.",
+                ],
+                "twist": "The camera was hidden inside the smoke alarm.",
+                "closer": "The police found three more.",
+            },
+        ],
+    },
+    "Inheritance": {
+        "button": "Inheritance",
+        "label": "money drama",
+        "question": "Grandpa left everyone money except one person. Then the video played.",
+        "queries": [
+            "old documents close up",
+            "signing papers close up",
+            "cash money close up",
+            "coffee table close up",
+            "pov cooking close up hands",
+        ],
+        "confessions": [
+            {
+                "hook": "Grandpa left everyone money except my uncle. Then the video played.",
+                "beats": [
+                    "The lawyer said grandpa recorded it himself.",
+                    "My uncle laughed.",
+                    "The video showed grandpa at the kitchen table.",
+                    "He said, check the garage.",
+                    "Inside was a locked freezer.",
+                ],
+                "twist": "It was full of things my uncle claimed were stolen.",
+                "closer": "The will was the least awkward part.",
+            },
+            {
+                "hook": "My aunt cried when she saw the will. Not because she got nothing.",
+                "beats": [
+                    "She got the house.",
+                    "My dad got one envelope.",
+                    "Inside was a photo.",
+                    "It showed my aunt signing grandpa's name.",
+                    "The date was two days after he died.",
+                ],
+                "twist": "The lawyer already had the original papers.",
+                "closer": "My aunt left without the house keys.",
+            },
         ],
     },
 }
@@ -154,7 +307,7 @@ BUTTON_TO_TOPIC = {topic["button"]: name for name, topic in TOPICS.items()}
 
 def main_keyboard() -> ReplyKeyboardMarkup:
     buttons = [[KeyboardButton(text=topic["button"])] for topic in TOPICS.values()]
-    buttons.append([KeyboardButton(text="🎲 Random story")])
+    buttons.append([KeyboardButton(text="Random story")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -171,49 +324,54 @@ def clean_filename(text: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "_", text).strip("_")[:50] or "video"
 
 
+def clean_caption_text(text: str) -> str:
+    text = html.unescape(text)
+    text = text.replace("/", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def build_script(topic_name: str) -> tuple[str, list[dict]]:
     topic = TOPICS[topic_name]
-    stories = random.sample(topic["stories"], k=3)
-    parts = [{"kind": "hook", "text": topic["question"]}]
-    for story in stories:
-        parts.append({"kind": "story", "text": story})
-    parts.append({"kind": "outro", "text": "Would you quit, or just pretend this was normal?"})
+    confession = random.choice(topic["confessions"])
+
+    parts = [
+        {"kind": "hook", "label": topic["label"], "text": confession["hook"]},
+    ]
+    for beat in confession["beats"]:
+        parts.append({"kind": "story", "label": topic["label"], "text": beat})
+    parts.append({"kind": "twist", "label": "wait for it", "text": confession["twist"]})
+    parts.append({"kind": "outro", "label": "comment", "text": confession["closer"]})
+    parts.append({"kind": "outro", "label": "comment", "text": "What would you do next?"})
+
     narration = "\n\n".join(part["text"] for part in parts)
     return narration, parts
 
 
 async def make_voiceover(text: str, out_path: Path) -> None:
-    raw_path = out_path.with_name("voice_raw.mp3")
+    raw_path = out_path.with_name(f"{out_path.stem}_raw.mp3")
 
     if TTS_PROVIDER == "gtts":
         await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
-        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
-        return
-
-    if TTS_PROVIDER == "edge":
+    elif TTS_PROVIDER == "edge":
         await make_voiceover_edge(text, raw_path)
-        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
-        return
-
-    if TTS_PROVIDER == "elevenlabs":
+    elif TTS_PROVIDER == "elevenlabs":
         await asyncio.to_thread(make_voiceover_elevenlabs, text, raw_path)
-        await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
-        return
-
-    try:
-        if ELEVENLABS_API_KEY:
-            await asyncio.to_thread(make_voiceover_elevenlabs, text, raw_path)
-        else:
-            await make_voiceover_edge(text, raw_path)
-    except Exception as e:
-        logger.warning("Primary TTS failed, falling back to gTTS: %s", e)
-        await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
+    else:
+        try:
+            if ELEVENLABS_API_KEY:
+                await asyncio.to_thread(make_voiceover_elevenlabs, text, raw_path)
+            else:
+                await make_voiceover_edge(text, raw_path)
+        except Exception as e:
+            logger.warning("Primary TTS failed, falling back to gTTS: %s", e)
+            await asyncio.to_thread(make_voiceover_gtts, text, raw_path)
 
     await asyncio.to_thread(speed_audio, raw_path, out_path, VOICE_SPEED)
 
 
 async def make_voiceover_edge(text: str, out_path: Path) -> None:
-    communicate = edge_tts.Communicate(text, VOICE, rate="+8%")
+    communicate = edge_tts.Communicate(text, VOICE, rate="+3%", pitch="-3Hz")
     await communicate.save(str(out_path))
 
 
@@ -237,9 +395,9 @@ def make_voiceover_elevenlabs(text: str, out_path: Path) -> None:
             "text": text,
             "model_id": "eleven_multilingual_v2",
             "voice_settings": {
-                "stability": 0.42,
-                "similarity_boost": 0.78,
-                "style": 0.35,
+                "stability": 0.34,
+                "similarity_boost": 0.82,
+                "style": 0.45,
                 "use_speaker_boost": True,
             },
         },
@@ -254,17 +412,15 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
         shutil.copyfile(input_path, out_path)
         return
 
+    filters = []
+    remaining = speed
+    while remaining > 2.0:
+        filters.append("atempo=2.0")
+        remaining /= 2.0
+    filters.append(f"atempo={remaining:.3f}")
+
     subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(input_path),
-            "-filter:a",
-            f"atempo={speed}",
-            "-vn",
-            str(out_path),
-        ],
+        ["ffmpeg", "-y", "-i", str(input_path), "-filter:a", ",".join(filters), "-vn", str(out_path)],
         check=True,
         capture_output=True,
     )
@@ -278,7 +434,6 @@ async def make_voiceover_sequence(parts: list[dict], out_path: Path, tmp_dir: Pa
     for index, part in enumerate(parts):
         if index > 0:
             audio_parts.append(transition)
-
         part_audio = tmp_dir / f"voice_part_{index:02d}.mp3"
         await make_voiceover(part["text"], part_audio)
         audio_parts.append(part_audio)
@@ -294,9 +449,9 @@ def make_transition_sound(out_path: Path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "sine=frequency=130:duration=0.18",
+            "sine=frequency=520:duration=0.11",
             "-af",
-            "tremolo=f=24:d=0.8,volume=0.9",
+            "volume=0.38,afade=t=out:st=0.07:d=0.04",
             str(out_path),
         ],
         check=True,
@@ -306,49 +461,58 @@ def make_transition_sound(out_path: Path) -> None:
 
 def concat_audio_files(audio_parts: list[Path], out_path: Path, tmp_dir: Path) -> None:
     list_file = tmp_dir / "audio_parts.txt"
-    list_file.write_text(
-        "".join(f"file '{part.as_posix()}'\n" for part in audio_parts),
-        encoding="utf-8",
-    )
+    list_file.write_text("".join(f"file '{part.as_posix()}'\n" for part in audio_parts), encoding="utf-8")
     subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(list_file),
-            "-c:a",
-            "libmp3lame",
-            "-q:a",
-            "4",
-            str(out_path),
-        ],
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c:a", "libmp3lame", "-q:a", "4", str(out_path)],
         check=True,
         capture_output=True,
     )
 
 
+def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
+    words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
+    chunks = []
+    current = []
+    for token in words:
+        if re.fullmatch(r"[!?.,]", token):
+            if current:
+                current[-1] += token
+            continue
+        current.append(token)
+        if len(current) >= max(2, min(3, max_words)):
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
 def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
-    weights = [max(4, len(part["text"].split())) for part in parts]
-    weight_total = sum(weights)
-    cursor = 0.2
-    result = []
-    usable = max(8, total_seconds - 0.7)
+    weights = [max(3, len(clean_caption_text(part["text"]).split())) for part in parts]
+    usable = max(8, total_seconds - 0.45)
+    cursor = 0.12
+    events = []
 
     for part, weight in zip(parts, weights):
-        duration = usable * weight / weight_total
+        part_duration = usable * weight / sum(weights)
         chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
-        chunk_duration = max(0.55, duration / max(1, len(chunks)))
-
+        chunk_duration = max(0.42, part_duration / max(1, len(chunks)))
+        part_start = cursor
+        part_end = min(total_seconds - 0.12, cursor + part_duration)
+        events.append(
+            {
+                "start": part_start,
+                "end": min(part_end, part_start + 2.7),
+                "text": part["label"].upper(),
+                "kind": "label",
+            }
+        )
         for chunk in chunks:
             start = cursor
-            end = min(total_seconds - 0.2, cursor + chunk_duration)
-            result.append({"start": start, "end": end, "text": chunk, "kind": part["kind"]})
+            end = min(total_seconds - 0.1, cursor + chunk_duration)
+            events.append({"start": start, "end": end, "text": chunk, "kind": part["kind"]})
             cursor = end
-    return result
+    return events
 
 
 def ass_time(seconds: float) -> str:
@@ -360,13 +524,24 @@ def ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
 
-def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
+def ass_escape(text: str) -> str:
+    text = clean_caption_text(text)
+    text = text.replace("\\", "")
+    text = text.replace("{", "(").replace("}", ")")
+    return text
+
+
+def color_caption(text: str, kind: str) -> str:
+    text = ass_escape(text)
+    if kind in {"hook", "twist"}:
+        return r"{\c&H00FFFF&}" + text + r"{\c&HFFFFFF&}"
+
     words = text.split()
-    return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
-
-
-def wrap_subtitle(text: str) -> str:
-    return r"\N".join(chunk_subtitle_text(text, max(2, SUBTITLE_WORDS)))
+    if len(words) < 2:
+        return text
+    hot = random.randrange(len(words))
+    words[hot] = r"{\c&H00FFFF&}" + words[hot] + r"{\c&HFFFFFF&}"
+    return " ".join(words)
 
 
 def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path) -> None:
@@ -378,19 +553,30 @@ PlayResY: {H}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,118,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,8,3,5,70,70,0,1
-Style: Hook,Arial,126,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,9,3,5,70,70,0,1
+Style: Default,Arial,132,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,1,0,0,0,100,100,0,0,1,9,4,5,64,64,0,1
+Style: Hook,Arial,142,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,10,4,5,58,58,0,1
+Style: Twist,Arial,146,&H0000FFFF,&H000000FF,&H00000000,&HAA000000,1,0,0,0,100,100,0,0,1,10,4,5,58,58,0,1
+Style: Label,Arial,48,&H00FFFFFF,&H000000FF,&H00232323,&HCC232323,1,0,0,0,100,100,0,0,3,18,0,8,90,90,142,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     lines = [header]
     for item in events:
-        style = "Hook" if item["kind"] == "hook" else "Default"
-        text = html.escape(item["text"]).replace(",", r"\,")
-        lines.append(
-            f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},{style},,0,0,0,,{text}\n"
-        )
+        if item["kind"] == "label":
+            style = "Label"
+            text = ass_escape(item["text"])
+        elif item["kind"] == "hook":
+            style = "Hook"
+            text = color_caption(item["text"], "hook")
+        elif item["kind"] == "twist":
+            style = "Twist"
+            text = color_caption(item["text"], "twist")
+        else:
+            style = "Default"
+            text = color_caption(item["text"], item["kind"])
+
+        lines.append(f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},{style},,0,0,0,,{text}\n")
     out_path.write_text("".join(lines), encoding="utf-8")
 
 
@@ -413,11 +599,11 @@ def ffprobe_duration(path: Path) -> float:
     return float(proc.stdout.strip())
 
 
-def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
+def search_pexels_videos(query: str, per_page: int = 12) -> list[dict]:
     logger.info("Searching Pexels videos: %s", query)
     r = get_session().get(
         "https://api.pexels.com/videos/search",
-        params={"query": query, "per_page": per_page},
+        params={"query": query, "per_page": per_page, "orientation": "portrait"},
         headers={"Authorization": PEXELS_API_KEY},
         timeout=30,
     )
@@ -426,24 +612,32 @@ def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
 
 
 def best_video_file(video: dict) -> str | None:
-    files = video.get("video_files", [])
-    files = [f for f in files if f.get("link")]
+    files = [f for f in video.get("video_files", []) if f.get("link")]
     if not files:
         return None
 
     portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
-    candidates = portrait or files
-    candidates.sort(key=lambda f: (f.get("height") or 0, f.get("width") or 0), reverse=True)
+    strong = [f for f in portrait if (f.get("height") or 0) >= 1280 and (f.get("width") or 0) >= 720]
+    candidates = strong or portrait or files
+    candidates.sort(
+        key=lambda f: (
+            f.get("height") or 0,
+            f.get("width") or 0,
+            f.get("fps") or 0,
+            f.get("size") or 0,
+        ),
+        reverse=True,
+    )
     return candidates[0]["link"]
 
 
-def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 8) -> list[Path]:
+def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 10) -> list[Path]:
     topic = TOPICS[topic_name]
     urls = []
-    random_queries = topic["queries"].copy()
-    random.shuffle(random_queries)
+    queries = topic["queries"] + random.sample(STICKY_QUERIES, k=min(4, len(STICKY_QUERIES)))
+    random.shuffle(queries)
 
-    for query in random_queries:
+    for query in queries:
         for video in search_pexels_videos(query):
             url = best_video_file(video)
             if url and url not in urls:
@@ -472,59 +666,60 @@ def download_pexels_clips(topic_name: str, tmp_dir: Path, wanted: int = 8) -> li
 
 
 def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds: float) -> list[Path]:
-    segment_seconds = 1.6
-    needed = max(6, int(target_seconds // segment_seconds) + 2)
+    segment_seconds = 1.15
+    needed = max(8, int(target_seconds // segment_seconds) + 2)
     segments = []
 
     for index in range(needed):
         src = source_clips[index % len(source_clips)]
         out = tmp_dir / f"segment_{index:02d}.mp4"
-        duration = min(segment_seconds, max(0.8, target_seconds - index * segment_seconds))
+        duration = min(segment_seconds, max(0.75, target_seconds - index * segment_seconds))
         input_duration = duration * VIDEO_SPEED
+        try:
+            src_duration = ffprobe_duration(src)
+        except Exception:
+            src_duration = 0
+        seek = 0
+        if src_duration > input_duration + 2.5:
+            seek = random.uniform(0.4, src_duration - input_duration - 0.4)
+
         vf = (
-            f"scale={int(W * 1.22)}:{int(H * 1.22)}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
+            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},"
+            "unsharp=5:5:0.55:3:3:0.25,"
+            f"setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
         )
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-stream_loop",
-                "-1",
-                "-i",
-                str(src),
-                "-t",
-                f"{input_duration:.2f}",
-                "-vf",
-                vf,
-                "-an",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "23",
-                str(out),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        cmd = ["ffmpeg", "-y"]
+        if seek:
+            cmd += ["-ss", f"{seek:.2f}"]
+        cmd += [
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(src),
+            "-t",
+            f"{input_duration:.2f}",
+            "-vf",
+            vf,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            str(out),
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
         segments.append(out)
     return segments
 
 
 def concat_segments(segments: list[Path], tmp_dir: Path) -> Path:
     list_file = tmp_dir / "segments.txt"
-    list_file.write_text(
-        "".join(f"file '{segment.as_posix()}'\n" for segment in segments),
-        encoding="utf-8",
-    )
+    list_file.write_text("".join(f"file '{segment.as_posix()}'\n" for segment in segments), encoding="utf-8")
     out = tmp_dir / "base.mp4"
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)],
-        check=True,
-        capture_output=True,
-    )
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)], check=True, capture_output=True)
     return out
 
 
@@ -552,11 +747,11 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
             "-preset",
             "veryfast",
             "-crf",
-            "23",
+            "20",
             "-c:a",
             "aac",
             "-b:a",
-            "160k",
+            "192k",
             "-shortest",
             str(out_path),
         ],
@@ -572,7 +767,7 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     subtitles = tmp_dir / "subs.ass"
     out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
 
-    await make_voiceover(narration, voiceover)
+    await make_voiceover_sequence(parts, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
     write_ass_subtitles(parts, audio_seconds, subtitles)
 
@@ -627,24 +822,14 @@ def choose_autopilot_topic() -> str:
 async def autopilot_loop() -> None:
     if not AUTOPILOT_ENABLED:
         return
-
     if not AUTOPILOT_USER_ID:
         logger.warning("AUTOPILOT_ENABLED=true, but AUTOPILOT_USER_ID is empty")
         return
 
-    logger.info(
-        "Autopilot started: user_id=%s interval_hours=%s",
-        AUTOPILOT_USER_ID,
-        AUTOPILOT_INTERVAL_HOURS,
-    )
-
     while True:
         topic_name = choose_autopilot_topic()
         try:
-            await bot.send_message(
-                AUTOPILOT_USER_ID,
-                f"Autopilot generating: {TOPICS[topic_name]['question']}",
-            )
+            await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot generating: {TOPICS[topic_name]['question']}")
             video_path, narration = await generate_story_video(topic_name)
             await bot.send_video(
                 AUTOPILOT_USER_ID,
@@ -654,26 +839,24 @@ async def autopilot_loop() -> None:
                 request_timeout=300,
             )
             await bot.send_message(AUTOPILOT_USER_ID, f"Voiceover text:\n\n{narration}")
-            logger.info("Autopilot generated video: %s", topic_name)
         except Exception as e:
             logger.error("Autopilot failed: %s", e, exc_info=True)
             try:
                 await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
             except Exception:
                 pass
-
         await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
 
 
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
     await message.answer(
-        "Story Satisfying Bot\nВыбери рубрику, и я соберу ролик: Pexels video + English voiceover + subtitles.",
+        "Story Satisfying Bot\nВыбери тему, и я соберу ролик: сильный хук + мужская озвучка + короткие субтитры + залипательный фон.",
         reply_markup=main_keyboard(),
     )
 
 
-@dp.message(F.text == "🎲 Random story")
+@dp.message(F.text == "Random story")
 async def random_story(message: Message) -> None:
     await start_generation(message, random.choice(list(TOPICS.keys())))
 
