@@ -36,9 +36,17 @@ AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
 AUTOPILOT_INTERVAL_HOURS = float(os.getenv("AUTOPILOT_INTERVAL_HOURS", "6"))
 AUTOPILOT_TOPICS = [x.strip() for x in os.getenv("AUTOPILOT_TOPICS", "").split(",") if x.strip()]
+AUTOPILOT_TARGET = os.getenv("AUTOPILOT_TARGET", "telegram").lower()
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+
+YOUTUBE_UPLOAD_ENABLED = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").lower() == "true"
+YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
+YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
+YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
+YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
+YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 
 W, H = 1080, 1920
 FPS = 30
@@ -779,6 +787,80 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     return out_path, narration
 
 
+def make_youtube_metadata(topic_name: str, narration: str) -> tuple[str, str, list[str]]:
+    first_line = clean_caption_text(narration.splitlines()[0] if narration.splitlines() else TOPICS[topic_name]["question"])
+    title = first_line[:88].rstrip(" .,!?:;")
+    if "#shorts" not in title.lower():
+        title = f"{title} #shorts"
+
+    description = (
+        f"{first_line}\n\n"
+        "Anonymous story with a twist.\n\n"
+        "#shorts #storytime #redditstories #drama #confession"
+    )
+    tags = [
+        "shorts",
+        "storytime",
+        "reddit stories",
+        "drama",
+        "confession",
+        "family drama",
+        "cheating story",
+        "true story",
+    ]
+    return title, description, tags
+
+
+def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
+    if not (YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN):
+        raise RuntimeError(
+            "YouTube upload needs YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN"
+        )
+
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+
+    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+    credentials = Credentials(
+        token=None,
+        refresh_token=YOUTUBE_REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=YOUTUBE_CLIENT_ID,
+        client_secret=YOUTUBE_CLIENT_SECRET,
+        scopes=scopes,
+    )
+    credentials.refresh(Request())
+
+    youtube = build("youtube", "v3", credentials=credentials)
+    title, description, tags = make_youtube_metadata(topic_name, narration)
+    media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": YOUTUBE_CATEGORY_ID,
+            },
+            "status": {
+                "privacyStatus": YOUTUBE_PRIVACY_STATUS,
+                "selfDeclaredMadeForKids": False,
+            },
+        },
+        media_body=media,
+    )
+
+    response = None
+    while response is None:
+        _, response = request.next_chunk()
+
+    video_id = response["id"]
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
 async def start_generation(message: Message, topic_name: str) -> None:
     user_id = message.from_user.id
     if len(active_users) >= MAX_PARALLEL_GENERATIONS and user_id not in active_users:
@@ -822,29 +904,43 @@ def choose_autopilot_topic() -> str:
 async def autopilot_loop() -> None:
     if not AUTOPILOT_ENABLED:
         return
-    if not AUTOPILOT_USER_ID:
-        logger.warning("AUTOPILOT_ENABLED=true, but AUTOPILOT_USER_ID is empty")
+    youtube_mode = YOUTUBE_UPLOAD_ENABLED or AUTOPILOT_TARGET == "youtube"
+    if not youtube_mode and not AUTOPILOT_USER_ID:
+        logger.warning("Autopilot has no target. Set AUTOPILOT_TARGET=youtube or AUTOPILOT_USER_ID.")
         return
 
     while True:
         topic_name = choose_autopilot_topic()
         try:
-            await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot generating: {TOPICS[topic_name]['question']}")
+            if AUTOPILOT_USER_ID:
+                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot generating: {TOPICS[topic_name]['question']}")
+
             video_path, narration = await generate_story_video(topic_name)
-            await bot.send_video(
-                AUTOPILOT_USER_ID,
-                FSInputFile(video_path, filename="story_short.mp4"),
-                caption=f"Autopilot ready: {topic_name}",
-                supports_streaming=True,
-                request_timeout=300,
-            )
-            await bot.send_message(AUTOPILOT_USER_ID, f"Voiceover text:\n\n{narration}")
+
+            youtube_url = ""
+            if youtube_mode:
+                youtube_url = await asyncio.to_thread(upload_to_youtube, video_path, topic_name, narration)
+                logger.info("Uploaded to YouTube: %s", youtube_url)
+
+            if AUTOPILOT_USER_ID:
+                caption = f"Autopilot ready: {topic_name}"
+                if youtube_url:
+                    caption += f"\nYouTube: {youtube_url}"
+                await bot.send_video(
+                    AUTOPILOT_USER_ID,
+                    FSInputFile(video_path, filename="story_short.mp4"),
+                    caption=caption,
+                    supports_streaming=True,
+                    request_timeout=300,
+                )
+                await bot.send_message(AUTOPILOT_USER_ID, f"Voiceover text:\n\n{narration}")
         except Exception as e:
             logger.error("Autopilot failed: %s", e, exc_info=True)
-            try:
-                await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
-            except Exception:
-                pass
+            if AUTOPILOT_USER_ID:
+                try:
+                    await bot.send_message(AUTOPILOT_USER_ID, f"Autopilot error: {e}")
+                except Exception:
+                    pass
         await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
 
 
