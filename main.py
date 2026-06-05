@@ -25,12 +25,12 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
-VOICE = os.getenv("VOICE", "en-US-DavisNeural")
+VOICE = os.getenv("VOICE", "en-US-GuyNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.92"))
 EDGE_RATE = os.getenv("EDGE_RATE", "-8%")
 EDGE_PITCH = os.getenv("EDGE_PITCH", "-8Hz")
-ALLOW_GTTS_FALLBACK = os.getenv("ALLOW_GTTS_FALLBACK", "false").lower() == "true"
+ALLOW_GTTS_FALLBACK = os.getenv("ALLOW_GTTS_FALLBACK", "true").lower() == "true"
 VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "1.35"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
 VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "45"))
@@ -317,177 +317,6 @@ TOPICS = {
 
 FRESH_TOPIC_NAME = "Fresh drama"
 
-FRESH_CONFESSIONS = [
-    {
-        "label": "family betrayal",
-        "queries": ["angry man phone close up", "pov cooking close up hands", "knife cutting vegetables close up"],
-        "hook": "My boss started dating my daughter. She is twenty, and he is my father's age.",
-        "beats": [
-            "He invited me to lunch like nothing was wrong.",
-            "Then he said he wanted my blessing.",
-            "My daughter texted me not to overreact.",
-            "I asked how long this had been going on.",
-            "He smiled and said, before her birthday.",
-        ],
-        "twist": "Then I found out he approved her promotion himself.",
-        "closer": "I quit before he could call it a family issue.",
-    },
-    {
-        "label": "wedding betrayal",
-        "queries": ["wedding cake close up", "bride phone close up", "champagne pouring close up"],
-        "hook": "My fiance cheated on me during our wedding. I found out before the first dance.",
-        "beats": [
-            "Her phone kept lighting up on the table.",
-            "The message said, I miss the room upstairs.",
-            "I thought it was a joke.",
-            "Then the best man disappeared.",
-            "So did she.",
-        ],
-        "twist": "The photographer caught both of them in the hallway mirror.",
-        "closer": "I played the photo on the projector.",
-    },
-    {
-        "label": "cheating wife",
-        "queries": ["phone texting close up dark", "coffee pouring close up", "street food cooking close up"],
-        "hook": "My wife sent me a photo by mistake. The mirror behind her showed everything.",
-        "beats": [
-            "She said she was working late.",
-            "The photo was supposed to be innocent.",
-            "Just her coffee and laptop.",
-            "But the mirror showed a hotel bed.",
-            "And a man's watch on the pillow.",
-        ],
-        "twist": "The watch was mine. I gave it to my brother last Christmas.",
-        "closer": "I called him first.",
-    },
-    {
-        "label": "secret child",
-        "queries": ["family dinner close up", "old photo close up", "hands washing dishes close up"],
-        "hook": "A woman brought a child to my door and said my husband already knew.",
-        "beats": [
-            "The boy had my husband's eyes.",
-            "She had his old hoodie.",
-            "I asked when this happened.",
-            "She said, before your honeymoon.",
-            "My husband went pale.",
-        ],
-        "twist": "Then the boy called my mother-in-law grandma.",
-        "closer": "Everyone knew except me.",
-    },
-    {
-        "label": "boss revenge",
-        "queries": ["office desk typing close up", "keyboard close up", "coffee spill close up"],
-        "hook": "My boss fired me for being late. He forgot why I was late.",
-        "beats": [
-            "I was at the hospital with his wife.",
-            "She begged me not to tell him.",
-            "I came back and found my badge disabled.",
-            "He said loyalty matters.",
-            "So I forwarded one email.",
-        ],
-        "twist": "It was the hotel booking he made under my name.",
-        "closer": "HR called me before I reached the elevator.",
-    },
-    {
-        "label": "daughter secret",
-        "queries": ["birthday cake close up", "phone texting close up", "pov cooking close up"],
-        "hook": "My daughter invited her boyfriend to dinner. It was my wife's ex.",
-        "beats": [
-            "He walked in like he owned the room.",
-            "My wife dropped a glass.",
-            "My daughter said they met at the gym.",
-            "I asked his age.",
-            "He said age is just pressure from society.",
-        ],
-        "twist": "Then my wife whispered, he knows.",
-        "closer": "Dinner ended before the food came out.",
-    },
-    {
-        "label": "neighbor secret",
-        "queries": ["apartment door lock close up", "kitchen close up night", "cleaning kitchen close up"],
-        "hook": "My neighbor knew what I cooked every night. Then she named the pan.",
-        "beats": [
-            "I laughed at first.",
-            "Then she mentioned the broken handle.",
-            "I never posted it.",
-            "I checked the window.",
-            "Nothing was there.",
-        ],
-        "twist": "The camera was inside my smoke alarm.",
-        "closer": "The landlord changed his story three times.",
-    },
-    {
-        "label": "inheritance trap",
-        "queries": ["signing papers close up", "old documents close up", "cash money close up"],
-        "hook": "Grandpa left me one dollar. Then the lawyer gave me a second envelope.",
-        "beats": [
-            "My cousins laughed.",
-            "My aunt filmed my reaction.",
-            "The envelope said, open alone.",
-            "Inside was a key.",
-            "The key opened his storage unit.",
-        ],
-        "twist": "Everything valuable was already there.",
-        "closer": "The one dollar was bait.",
-    },
-    {
-        "label": "best friend betrayal",
-        "queries": ["phone notification close up", "coffee table close up", "street food close up"],
-        "hook": "My best friend exposed my cheating girlfriend. Then I checked his phone.",
-        "beats": [
-            "He acted like he saved me.",
-            "He showed screenshots.",
-            "He hugged me too long.",
-            "Something felt off.",
-            "So I looked at the contact name.",
-        ],
-        "twist": "The other man was him.",
-        "closer": "He exposed himself by accident.",
-    },
-    {
-        "label": "mother in law",
-        "queries": ["family dinner close up", "wedding ring close up", "cake cutting close up"],
-        "hook": "My mother-in-law asked for a private talk. She told me not to marry her son.",
-        "beats": [
-            "The wedding was in two days.",
-            "She said I deserved the truth.",
-            "My fiance had another apartment.",
-            "Another bank account.",
-            "And another name on the lease.",
-        ],
-        "twist": "The name was my sister's.",
-        "closer": "I still wore the dress, just not for him.",
-    },
-    {
-        "label": "fake pregnancy",
-        "queries": ["pregnancy test close up", "bathroom sink close up", "phone texting close up"],
-        "hook": "My girlfriend said she was pregnant. The doctor congratulated my roommate.",
-        "beats": [
-            "I thought I heard wrong.",
-            "She squeezed my hand too hard.",
-            "My roommate stopped smiling.",
-            "The doctor asked if we were both fathers.",
-            "Nobody answered.",
-        ],
-        "twist": "She had used his insurance card.",
-        "closer": "That tiny mistake saved me years.",
-    },
-    {
-        "label": "hidden camera",
-        "queries": ["bedroom lamp close up", "door lock close up", "dark room close up"],
-        "hook": "My boyfriend gifted me a lamp. My brother found a camera inside it.",
-        "beats": [
-            "He said it was expensive.",
-            "He asked me to keep it near my bed.",
-            "My brother works in security.",
-            "He noticed the tiny lens.",
-            "I called my boyfriend on speaker.",
-        ],
-        "twist": "He said, which lamp.",
-        "closer": "There were more than one.",
-    },
-]
-
 STRONG_CONFESSIONS = [
     {
         "label": "family betrayal",
@@ -646,7 +475,7 @@ STRONG_CONFESSIONS = [
             "Then he looked at my roommate.",
             "He said, congratulations, dad.",
             "The room went silent.",
-            "My girlfriend said it was a paperwork mistake.",
+            "She said it was a paperwork mistake.",
             "My roommate said nothing.",
             "That was how I knew.",
         ],
@@ -654,7 +483,7 @@ STRONG_CONFESSIONS = [
         "closer": "The baby was not mine. The betrayal was.",
     },
     {
-        "label": "hidden camera",
+        "label": "hidden camera lamp",
         "queries": STICKY_QUERIES,
         "hook": "My boyfriend bought me a bedside lamp, and my brother found a camera hidden inside it.",
         "beats": [
@@ -875,8 +704,30 @@ async def make_voiceover(text: str, out_path: Path) -> None:
 
 
 async def make_voiceover_edge(text: str, out_path: Path) -> None:
-    communicate = edge_tts.Communicate(text, VOICE, rate=EDGE_RATE, pitch=EDGE_PITCH)
-    await communicate.save(str(out_path))
+    """Try edge-tts with up to 3 retries, then fall back to gTTS if allowed."""
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            communicate = edge_tts.Communicate(text, VOICE, rate=EDGE_RATE, pitch=EDGE_PITCH)
+            await communicate.save(str(out_path))
+            return
+        except edge_tts.exceptions.NoAudioReceived as e:
+            last_error = e
+            wait = 2 ** attempt
+            logger.warning("edge-tts NoAudioReceived (attempt %d/3), retrying in %ds", attempt + 1, wait)
+            await asyncio.sleep(wait)
+        except Exception as e:
+            last_error = e
+            wait = 2 ** attempt
+            logger.warning("edge-tts error (attempt %d/3): %s, retrying in %ds", attempt + 1, e, wait)
+            await asyncio.sleep(wait)
+
+    # All retries exhausted
+    if ALLOW_GTTS_FALLBACK:
+        logger.warning("edge-tts failed after 3 attempts, falling back to gTTS: %s", last_error)
+        await asyncio.to_thread(make_voiceover_gtts, text, out_path)
+    else:
+        raise last_error
 
 
 def make_voiceover_gtts(text: str, out_path: Path) -> None:
@@ -1412,10 +1263,15 @@ async def autopilot_loop() -> None:
         await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
 
 
+# ── Handlers ──────────────────────────────────────────────────────────────────
+
 @dp.message(CommandStart())
-async def start(message: Message) -> None:
+async def cmd_start(message: Message) -> None:
     await message.answer(
-        "Story Satisfying Bot\nВыбери тему, и я соберу ролик: сильный хук + мужская озвучка + короткие субтитры + залипательный фон.",
+        "👋 Story Satisfying Bot\n\n"
+        "Выбери тему — я соберу короткий ролик:\n"
+        "сильный хук • мужская озвучка • субтитры • залипательный фон.\n\n"
+        "Нажми любую кнопку ниже 👇",
         reply_markup=main_keyboard(),
     )
 
@@ -1432,8 +1288,10 @@ async def topic_selected(message: Message) -> None:
 
 @dp.message()
 async def fallback(message: Message) -> None:
-    await message.answer("Нажми кнопку с рубрикой.", reply_markup=main_keyboard())
+    await message.answer("Нажми кнопку с рубрикой 👇", reply_markup=main_keyboard())
 
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 async def main() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
