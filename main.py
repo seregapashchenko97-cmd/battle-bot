@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from datetime import datetime, timezone
 
 import edge_tts
 import requests
@@ -30,11 +31,11 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
-VOICE = os.getenv("VOICE", "en-US-GuyNeural")
+VOICE = os.getenv("VOICE", "en-US-BrianNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.92"))
-EDGE_RATE = os.getenv("EDGE_RATE", "-8%")
-EDGE_PITCH = os.getenv("EDGE_PITCH", "-8Hz")
+EDGE_RATE = os.getenv("EDGE_RATE", "-12%")
+EDGE_PITCH = os.getenv("EDGE_PITCH", "-5Hz")
 ALLOW_GTTS_FALLBACK = os.getenv("ALLOW_GTTS_FALLBACK", "true").lower() == "true"
 VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "1.35"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
@@ -44,12 +45,10 @@ MIN_AUDIO_SECONDS = float(os.getenv("MIN_AUDIO_SECONDS", "42"))
 MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
-AUTOPILOT_INTERVAL_HOURS = float(os.getenv("AUTOPILOT_INTERVAL_HOURS", "6"))
 AUTOPILOT_TOPICS = [x.strip() for x in os.getenv("AUTOPILOT_TOPICS", "").split(",") if x.strip()]
-AUTOPILOT_TARGET = os.getenv("AUTOPILOT_TARGET", "telegram").lower()
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
 
 YOUTUBE_UPLOAD_ENABLED = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").lower() == "true"
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
@@ -62,6 +61,10 @@ YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 W, H = 1080, 1920
 FPS = 30
 
+# Best posting times for US audience (Eastern Time = UTC-4 in summer / UTC-5 in winter)
+# Slots: 9:00 ET, 15:00 ET, 20:00 ET  →  in UTC: 13:00, 19:00, 00:00
+AUTOPILOT_SCHEDULE_UTC = [13, 19, 0]  # hours in UTC
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
 if not PEXELS_API_KEY:
@@ -71,9 +74,12 @@ bot = Bot(BOT_TOKEN, request_timeout=300)
 dp = Dispatcher()
 active_users: set[int] = set()
 
-# Stores last generated video per user for "Publish now" button
+# Stores last generated video per user
 # { user_id: {"path": Path, "topic": str, "narration": str} }
 last_generated: dict[int, dict] = {}
+
+# Tracks which autopilot slots have already fired today (UTC date → set of hours)
+autopilot_fired: dict[str, set[int]] = {}
 
 
 STICKY_QUERIES = [
@@ -86,7 +92,10 @@ STICKY_QUERIES = [
     "chocolate pouring close up",
     "satisfying cleaning close up",
     "soap cutting close up",
-    "car detailing close up",
+    "sand cutting satisfying",
+    "kinetic sand close up",
+    "slime satisfying close up",
+    "resin pouring close up",
 ]
 
 
@@ -175,9 +184,9 @@ TOPICS = {
         "queries": [
             "office desk close up typing",
             "keyboard typing close up",
-            "coffee spilling close up",
-            "satisfying cleaning desk close up",
-            "woodworking close up",
+            "coffee pouring close up",
+            "satisfying cleaning close up",
+            "resin pouring close up",
         ],
         "confessions": [
             {
@@ -217,7 +226,7 @@ TOPICS = {
             "flower arrangement close up",
             "cake decorating close up",
             "champagne pouring close up",
-            "pov cooking close up hands",
+            "chocolate pouring close up",
         ],
         "confessions": [
             {
@@ -254,9 +263,9 @@ TOPICS = {
         "queries": [
             "apartment kitchen close up",
             "door lock close up",
-            "cleaning kitchen close up",
+            "satisfying cleaning close up",
             "pov cooking close up",
-            "night window rain close up",
+            "coffee pouring close up",
         ],
         "confessions": [
             {
@@ -293,8 +302,8 @@ TOPICS = {
             "old documents close up",
             "signing papers close up",
             "cash money close up",
-            "coffee table close up",
-            "pov cooking close up hands",
+            "coffee pouring close up",
+            "chocolate pouring close up",
         ],
         "confessions": [
             {
@@ -567,7 +576,6 @@ STRONG_CONFESSIONS = [
 ]
 
 FRESH_CONFESSIONS = STRONG_CONFESSIONS
-
 RECENT_HOOKS: list[str] = []
 
 ESCALATION_LINES = [
@@ -599,17 +607,48 @@ TOPICS[FRESH_TOPIC_NAME] = {
 
 BUTTON_TO_TOPIC = {topic["button"]: name for name, topic in TOPICS.items()}
 
-BTN_PUBLISH = "📤 Опубликовать на YouTube"
+# ── Keyboard buttons ──────────────────────────────────────────────────────────
+BTN_START = "🏠 Старт"
+BTN_GENERATE = "🎬 Генерировать видео"
 BTN_RANDOM = "🎲 Random story"
+BTN_REGENERATE = "🔄 Сгенерировать заново"
+BTN_PUBLISH_YT = "📤 Опубликовать на YouTube"
 
 
-def main_keyboard(show_publish: bool = False) -> ReplyKeyboardMarkup:
-    buttons = [[KeyboardButton(text=topic["button"])] for topic in TOPICS.values()]
+def keyboard_main() -> ReplyKeyboardMarkup:
+    """Main menu: Start + Generate."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_START)],
+            [KeyboardButton(text=BTN_GENERATE)],
+            [KeyboardButton(text=BTN_RANDOM)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def keyboard_topics() -> ReplyKeyboardMarkup:
+    """Topic selection menu with Start always visible."""
+    buttons = [[KeyboardButton(text=BTN_START)]]
+    for topic in TOPICS.values():
+        buttons.append([KeyboardButton(text=topic["button"])])
     buttons.append([KeyboardButton(text=BTN_RANDOM)])
-    if show_publish and YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN:
-        buttons.append([KeyboardButton(text=BTN_PUBLISH)])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+
+def keyboard_after_generation() -> ReplyKeyboardMarkup:
+    """After video is ready: regenerate + publish + start."""
+    rows = [
+        [KeyboardButton(text=BTN_START)],
+        [KeyboardButton(text=BTN_REGENERATE)],
+    ]
+    if YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN:
+        rows.append([KeyboardButton(text=BTN_PUBLISH_YT)])
+    rows.append([KeyboardButton(text=BTN_GENERATE)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def get_session() -> requests.Session:
     session = requests.Session()
@@ -644,7 +683,8 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    return " ".join(clean_caption_text(part["text"]) for part in parts)
+    sentences = [clean_caption_text(part["text"]).rstrip(".!?") for part in parts]
+    return ". ".join(sentences) + "."
 
 
 def count_part_words(parts: list[dict]) -> int:
@@ -716,7 +756,6 @@ async def make_voiceover(text: str, out_path: Path) -> None:
 
 
 async def make_voiceover_edge(text: str, out_path: Path) -> None:
-    # Strip accidental trailing dot/space from env var
     voice = VOICE.strip().rstrip(".")
     last_error: Exception | None = None
     for attempt in range(3):
@@ -783,8 +822,7 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
     filters.append(f"atempo={remaining:.3f}")
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(input_path), "-filter:a", ",".join(filters), "-vn", str(out_path)],
-        check=True,
-        capture_output=True,
+        check=True, capture_output=True,
     )
 
 
@@ -1016,10 +1054,11 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
     sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(base_video), "-i", str(voiceover),
-         "-t", f"{duration:.2f}", "-vf", f"subtitles='{sub_path}'",
+         "-t", f"{duration:.2f}", "-vf", f"subtitles='{sub_path}',scale=720:1280",
          "-map", "0:v", "-map", "1:a",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-         "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_path)],
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+         "-maxrate", "2M", "-bufsize", "4M",
+         "-c:a", "aac", "-b:a", "128k", "-shortest", str(out_path)],
         check=True, capture_output=True,
     )
 
@@ -1041,6 +1080,20 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     base_video = await asyncio.to_thread(concat_segments, segments, tmp_dir)
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
 
+    # Re-compress if too large for Telegram (50 MB hard limit)
+    size_mb = out_path.stat().st_size / (1024 * 1024)
+    if size_mb > 45:
+        logger.warning("Video is %.1f MB, re-compressing...", size_mb)
+        compressed = tmp_dir / "compressed.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(out_path),
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "32",
+             "-maxrate", "1.5M", "-bufsize", "3M",
+             "-c:a", "aac", "-b:a", "96k", str(compressed)],
+            check=True, capture_output=True,
+        )
+        out_path = compressed
+
     return out_path, narration
 
 
@@ -1049,11 +1102,9 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
 def make_youtube_metadata(topic_name: str, narration: str) -> tuple[str, str, list[str]]:
     lines = [l for l in narration.splitlines() if l.strip()]
     hook = clean_caption_text(lines[0]) if lines else TOPICS[topic_name]["question"]
-
     title = hook[:88].rstrip(" .,!?:;")
     if "#shorts" not in title.lower():
         title = f"{title} #shorts"
-
     hashtags = "#shorts #storytime #drama #confession #redditstories #fyp #viral #truestory #familydrama #cheating"
     description = (
         f"{hook}\n\n"
@@ -1083,10 +1134,8 @@ def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
         scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
     credentials.refresh(Request())
-
     youtube = build("youtube", "v3", credentials=credentials)
     title, description, tags = make_youtube_metadata(topic_name, narration)
-
     logger.info("Uploading to YouTube: %s", title)
     media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
     request = youtube.videos().insert(
@@ -1108,7 +1157,6 @@ def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
     response = None
     while response is None:
         _, response = request.next_chunk()
-
     video_id = response["id"]
     url = f"https://www.youtube.com/watch?v={video_id}"
     logger.info("YouTube upload done: %s", url)
@@ -1123,12 +1171,19 @@ async def start_generation(message: Message, topic_name: str) -> None:
         await message.answer("Сейчас уже идет генерация. Попробуй через пару минут.")
         return
     if user_id in active_users:
-        await message.answer("Твое видео уже генерируется. Дождись результата.")
+        await message.answer("Твоё видео уже генерируется. Дождись результата.")
         return
     active_users.add(user_id)
+
+    # Save last topic for "regenerate" button
+    if user_id not in last_generated:
+        last_generated[user_id] = {}
+    last_generated[user_id]["last_topic"] = topic_name
+
     await message.answer(
-        f"⏳ Генерирую: {TOPICS[topic_name]['question']}\nЭто займет несколько минут.",
-        reply_markup=main_keyboard(show_publish=False),
+        f"⏳ Генерирую: <b>{TOPICS[topic_name]['question']}</b>\nЭто займёт несколько минут.",
+        parse_mode="HTML",
+        reply_markup=keyboard_main(),
     )
     asyncio.create_task(run_generation(message, topic_name))
 
@@ -1139,8 +1194,12 @@ async def run_generation(message: Message, topic_name: str) -> None:
         video_path, narration = await generate_story_video(topic_name)
         title, description, tags = make_youtube_metadata(topic_name, narration)
 
-        # Save for manual "publish now"
-        last_generated[user_id] = {"path": video_path, "topic": topic_name, "narration": narration}
+        last_generated[user_id] = {
+            "path": video_path,
+            "topic": topic_name,
+            "narration": narration,
+            "last_topic": topic_name,
+        }
 
         caption = (
             f"✅ <b>Готово:</b> {topic_name}\n\n"
@@ -1155,50 +1214,102 @@ async def run_generation(message: Message, topic_name: str) -> None:
             request_timeout=300,
         )
         await message.answer(
-            f"📝 <b>Текст озвучки:</b>\n\n{narration}",
+            f"📝 <b>Текст озвучки:</b>\n\n{narration}\n\n"
+            "Выбери действие 👇",
             parse_mode="HTML",
-            reply_markup=main_keyboard(show_publish=True),
+            reply_markup=keyboard_after_generation(),
         )
     except Exception as e:
         logger.error("Generation failed: %s", e, exc_info=True)
-        await message.answer(f"❌ Ошибка генерации: {e}", reply_markup=main_keyboard())
+        await message.answer(f"❌ Ошибка генерации: {e}", reply_markup=keyboard_main())
     finally:
         active_users.discard(user_id)
 
+
+# ── Autopilot ─────────────────────────────────────────────────────────────────
 
 def choose_autopilot_topic() -> str:
     valid_topics = [t for t in AUTOPILOT_TOPICS if t in TOPICS]
     return random.choice(valid_topics) if valid_topics else FRESH_TOPIC_NAME
 
 
+def seconds_until_next_slot() -> tuple[int, int]:
+    """
+    Returns (seconds_to_wait, target_hour_utc) until the next scheduled posting slot.
+    Schedule: 13:00, 19:00, 00:00 UTC  (= 9am, 3pm, 8pm US Eastern)
+    """
+    now = datetime.now(timezone.utc)
+    today_key = now.strftime("%Y-%m-%d")
+
+    fired_today = autopilot_fired.get(today_key, set())
+
+    # Find next slot that hasn't fired today
+    for hour in sorted(AUTOPILOT_SCHEDULE_UTC):
+        if hour not in fired_today:
+            target = now.replace(hour=hour, minute=random.randint(0, 9), second=0, microsecond=0)
+            if target > now:
+                wait = int((target - now).total_seconds())
+                return wait, hour
+
+    # All slots fired today — wait until first slot tomorrow
+    from datetime import timedelta
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=AUTOPILOT_SCHEDULE_UTC[0],
+        minute=random.randint(0, 9),
+        second=0,
+        microsecond=0,
+    )
+    wait = int((tomorrow - now).total_seconds())
+    return wait, AUTOPILOT_SCHEDULE_UTC[0]
+
+
 async def autopilot_loop() -> None:
     if not AUTOPILOT_ENABLED:
         return
-    youtube_mode = YOUTUBE_UPLOAD_ENABLED or AUTOPILOT_TARGET == "youtube"
-    if not youtube_mode and not AUTOPILOT_USER_ID:
-        logger.warning("Autopilot has no target. Set AUTOPILOT_TARGET=youtube or AUTOPILOT_USER_ID.")
+    if not (YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN):
+        logger.warning("Autopilot enabled but YouTube credentials missing — autopilot disabled.")
         return
 
+    logger.info("Autopilot started. Schedule (UTC): %s", AUTOPILOT_SCHEDULE_UTC)
+
     while True:
+        wait_seconds, target_hour = seconds_until_next_slot()
+        logger.info("Autopilot: next post at UTC %02d:xx — waiting %d seconds", target_hour, wait_seconds)
+
+        if AUTOPILOT_USER_ID:
+            h, m = divmod(wait_seconds, 3600)
+            await bot.send_message(
+                AUTOPILOT_USER_ID,
+                f"🕐 Автопилот: следующая публикация через {h}ч {m//60}мин (UTC {target_hour:02d}:xx)"
+            )
+
+        await asyncio.sleep(wait_seconds)
+
+        # Mark slot as fired
+        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        autopilot_fired.setdefault(today_key, set()).add(target_hour)
+
         topic_name = choose_autopilot_topic()
         try:
             if AUTOPILOT_USER_ID:
-                await bot.send_message(AUTOPILOT_USER_ID, f"🤖 Autopilot generating: {TOPICS[topic_name]['question']}")
+                await bot.send_message(
+                    AUTOPILOT_USER_ID,
+                    f"🤖 Автопилот генерирует: <b>{TOPICS[topic_name]['question']}</b>",
+                    parse_mode="HTML",
+                )
 
             video_path, narration = await generate_story_video(topic_name)
             title, description, tags = make_youtube_metadata(topic_name, narration)
 
-            youtube_url = ""
-            if youtube_mode:
-                youtube_url = await asyncio.to_thread(upload_to_youtube, video_path, topic_name, narration)
-                logger.info("Uploaded to YouTube: %s", youtube_url)
+            youtube_url = await asyncio.to_thread(upload_to_youtube, video_path, topic_name, narration)
+            logger.info("Autopilot uploaded to YouTube: %s", youtube_url)
 
             if AUTOPILOT_USER_ID:
                 caption = (
-                    f"✅ <b>Autopilot готово:</b> {topic_name}\n\n"
-                    f"<b>Название:</b> {title}\n"
-                    + (f"<b>YouTube:</b> {youtube_url}\n" if youtube_url else "")
-                    + f"\n<b>Описание:</b>\n{description}"
+                    f"✅ <b>Автопилот опубликовал:</b> {topic_name}\n\n"
+                    f"🔗 {youtube_url}\n\n"
+                    f"<b>Название:</b> {title}\n\n"
+                    f"<b>Описание:</b>\n{description}"
                 )
                 await bot.send_video(
                     AUTOPILOT_USER_ID,
@@ -1217,10 +1328,12 @@ async def autopilot_loop() -> None:
             logger.error("Autopilot failed: %s", e, exc_info=True)
             if AUTOPILOT_USER_ID:
                 try:
-                    await bot.send_message(AUTOPILOT_USER_ID, f"❌ Autopilot error: {e}")
+                    await bot.send_message(AUTOPILOT_USER_ID, f"❌ Автопилот ошибка: {e}")
                 except Exception:
                     pass
-        await asyncio.sleep(max(900, int(AUTOPILOT_INTERVAL_HOURS * 3600)))
+
+        # Small buffer before checking next slot
+        await asyncio.sleep(60)
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -1229,19 +1342,50 @@ async def autopilot_loop() -> None:
 async def cmd_start(message: Message) -> None:
     await message.answer(
         "👋 <b>Story Satisfying Bot</b>\n\n"
-        "Выбери тему — я соберу короткий ролик:\n"
-        "сильный хук • мужская озвучка • субтитры • залипательный фон.\n\n"
-        "Нажми кнопку ниже 👇",
+        "Нажми <b>Генерировать видео</b> — выбери тему — получи ролик.\n\n"
+        "🤖 Автопилот публикует 3 раза в день на YouTube\n"
+        "в лучшее время для американской аудитории:\n"
+        "9:00 • 15:00 • 20:00 по восточному времени США.",
         parse_mode="HTML",
-        reply_markup=main_keyboard(),
+        reply_markup=keyboard_main(),
     )
 
 
-@dp.message(F.text == BTN_PUBLISH)
+@dp.message(F.text == BTN_START)
+async def handle_start_button(message: Message) -> None:
+    await message.answer(
+        "👋 Главное меню.\nНажми <b>Генерировать видео</b> для выбора темы.",
+        parse_mode="HTML",
+        reply_markup=keyboard_main(),
+    )
+
+
+@dp.message(F.text == BTN_GENERATE)
+async def handle_generate(message: Message) -> None:
+    await message.answer(
+        "🎬 Выбери тему для видео 👇",
+        reply_markup=keyboard_topics(),
+    )
+
+
+@dp.message(F.text == BTN_RANDOM)
+async def random_story(message: Message) -> None:
+    await start_generation(message, FRESH_TOPIC_NAME)
+
+
+@dp.message(F.text == BTN_REGENERATE)
+async def handle_regenerate(message: Message) -> None:
+    user_id = message.from_user.id
+    data = last_generated.get(user_id)
+    topic_name = data.get("last_topic", FRESH_TOPIC_NAME) if data else FRESH_TOPIC_NAME
+    await start_generation(message, topic_name)
+
+
+@dp.message(F.text == BTN_PUBLISH_YT)
 async def publish_now(message: Message) -> None:
     user_id = message.from_user.id
     data = last_generated.get(user_id)
-    if not data:
+    if not data or "path" not in data:
         await message.answer("Нет готового видео. Сначала сгенерируй ролик.")
         return
     if not (YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN):
@@ -1251,7 +1395,7 @@ async def publish_now(message: Message) -> None:
         )
         return
 
-    await message.answer("⏳ Публикую на YouTube...")
+    await message.answer("⏳ Публикую на YouTube...", reply_markup=keyboard_main())
     try:
         youtube_url = await asyncio.to_thread(
             upload_to_youtube, data["path"], data["topic"], data["narration"]
@@ -1263,16 +1407,11 @@ async def publish_now(message: Message) -> None:
             f"<b>Название:</b> {title}\n\n"
             f"<b>Описание:</b>\n{description}",
             parse_mode="HTML",
-            reply_markup=main_keyboard(),
+            reply_markup=keyboard_main(),
         )
     except Exception as e:
         logger.error("Manual publish failed: %s", e, exc_info=True)
-        await message.answer(f"❌ Ошибка публикации: {e}", reply_markup=main_keyboard())
-
-
-@dp.message(F.text == BTN_RANDOM)
-async def random_story(message: Message) -> None:
-    await start_generation(message, FRESH_TOPIC_NAME)
+        await message.answer(f"❌ Ошибка публикации: {e}", reply_markup=keyboard_main())
 
 
 @dp.message(F.text.in_(set(BUTTON_TO_TOPIC.keys())))
@@ -1282,7 +1421,7 @@ async def topic_selected(message: Message) -> None:
 
 @dp.message()
 async def fallback(message: Message) -> None:
-    await message.answer("Нажми кнопку с рубрикой 👇", reply_markup=main_keyboard())
+    await message.answer("Нажми кнопку 👇", reply_markup=keyboard_main())
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
