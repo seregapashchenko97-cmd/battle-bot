@@ -27,13 +27,13 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 VOICE = os.getenv("VOICE", "en-US-GuyNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.18"))
-EDGE_RATE = os.getenv("EDGE_RATE", "+14%")
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
+EDGE_RATE = os.getenv("EDGE_RATE", "+2%")
 EDGE_PITCH = os.getenv("EDGE_PITCH", "-4Hz")
 ALLOW_GTTS_FALLBACK = os.getenv("ALLOW_GTTS_FALLBACK", "false").lower() == "true"
 VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "1.35"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
-VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "48"))
+VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "70"))
 MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
@@ -486,6 +486,247 @@ FRESH_CONFESSIONS = [
     },
 ]
 
+STRONG_CONFESSIONS = [
+    {
+        "label": "family betrayal",
+        "queries": STICKY_QUERIES,
+        "hook": "My boss started dating my twenty-year-old daughter, then threatened to fire me if I said anything.",
+        "beats": [
+            "He called it a serious relationship.",
+            "I called it a man twice her age using his power.",
+            "My daughter begged me not to make a scene.",
+            "Then he invited both of us to dinner.",
+            "At the table, he asked for my blessing.",
+            "When I refused, he said my job review was coming up.",
+            "That was when my daughter started crying.",
+            "She said he had promised her a promotion for months.",
+            "I recorded the whole conversation on my phone.",
+        ],
+        "twist": "The next morning, HR asked why he approved her raise before they ever started dating.",
+        "closer": "He thought I was scared. I was just waiting for him to say it out loud.",
+    },
+    {
+        "label": "wedding betrayal",
+        "queries": STICKY_QUERIES,
+        "hook": "My bride cheated on me during our wedding, and the photographer accidentally caught everything.",
+        "beats": [
+            "We had not even cut the cake yet.",
+            "Her phone kept lighting up beside my plate.",
+            "One message said, come back upstairs.",
+            "I thought someone was drunk and joking.",
+            "Then my best man disappeared.",
+            "Five minutes later, so did she.",
+            "I went looking and saw the photographer frozen in the hallway.",
+            "He whispered, do not go in there.",
+            "His camera screen showed my wife in her dress with my best man behind her.",
+        ],
+        "twist": "Instead of giving a speech, I asked the DJ to put the photo on the projector.",
+        "closer": "Her father was the first person to stand up and leave.",
+    },
+    {
+        "label": "cheating wife",
+        "queries": STICKY_QUERIES,
+        "hook": "My wife sent me a cute selfie from work, but the mirror behind her exposed the lie.",
+        "beats": [
+            "She said she was working late.",
+            "The photo showed coffee, a laptop, and her fake tired smile.",
+            "I almost replied, get some rest.",
+            "Then I noticed the mirror behind her.",
+            "It showed a hotel bed.",
+            "On the bed was a man's jacket.",
+            "Beside it was a watch I knew too well.",
+            "I bought that watch for my brother last Christmas.",
+            "I called him, and he declined before the first ring ended.",
+        ],
+        "twist": "When I got home, my wife had already packed my brother's clothes by mistake.",
+        "closer": "That was the only honest thing she did all night.",
+    },
+    {
+        "label": "secret child",
+        "queries": STICKY_QUERIES,
+        "hook": "A woman showed up at my door with a little boy and said my husband had been paying her for years.",
+        "beats": [
+            "The boy looked exactly like him.",
+            "Same eyes, same nervous smile, same scar on the chin.",
+            "She said she did not want money anymore.",
+            "She wanted him to stop hiding.",
+            "My husband walked in and dropped his keys.",
+            "I asked if this was his son.",
+            "He did not answer.",
+            "The boy looked at my mother-in-law and smiled.",
+            "Then he called her grandma.",
+        ],
+        "twist": "My mother-in-law had been babysitting him every Friday while I worked late.",
+        "closer": "The affair hurt. The family cover-up destroyed me.",
+    },
+    {
+        "label": "hidden camera",
+        "queries": STICKY_QUERIES,
+        "hook": "My neighbor texted me a photo of my bedroom while I was standing inside it.",
+        "beats": [
+            "The message said, close your curtains.",
+            "I looked at the window.",
+            "The curtains were already closed.",
+            "The photo was from inside the room.",
+            "I thought someone had broken in.",
+            "Then I noticed the angle.",
+            "It came from the smoke alarm.",
+            "I ripped it open and found a tiny camera.",
+            "The Wi-Fi name connected to it was my landlord's last name.",
+        ],
+        "twist": "When police checked the apartment, they found cameras in two other rooms.",
+        "closer": "My neighbor was not spying. She was warning me.",
+    },
+    {
+        "label": "inheritance trap",
+        "queries": STICKY_QUERIES,
+        "hook": "My family laughed when grandpa left me one dollar, until the lawyer asked everyone else to leave.",
+        "beats": [
+            "My cousins recorded my reaction.",
+            "My aunt filmed my face.",
+            "My uncle said grandpa finally saw my real value.",
+            "I smiled because the lawyer was still holding another envelope.",
+            "It said, open only when the room is empty.",
+            "Inside was a storage key.",
+            "There was also a note in grandpa's handwriting.",
+            "It said, they only came for the house.",
+            "The storage unit had the real will, cash, and documents.",
+        ],
+        "twist": "The house they were fighting over had already been sold to pay their debts.",
+        "closer": "The one dollar was bait, and every greedy person took it.",
+    },
+    {
+        "label": "best friend betrayal",
+        "queries": STICKY_QUERIES,
+        "hook": "My best friend exposed my cheating girlfriend, then accidentally proved he was the other man.",
+        "beats": [
+            "He rushed to my apartment like a hero.",
+            "He showed screenshots.",
+            "He said I deserved better.",
+            "He kept touching my shoulder like he had won something.",
+            "Something felt off.",
+            "The screenshots had one contact name blurred.",
+            "I asked why.",
+            "He said privacy.",
+            "Then his phone lit up on the table.",
+            "My girlfriend's name was on the screen.",
+        ],
+        "twist": "The message said, did he believe the fake screenshots.",
+        "closer": "He did not expose the affair. He tried to control the ending.",
+    },
+    {
+        "label": "mother in law",
+        "queries": STICKY_QUERIES,
+        "hook": "Two days before my wedding, my future mother-in-law begged me not to marry her son.",
+        "beats": [
+            "She said I deserved the truth.",
+            "My fiance had another apartment.",
+            "Another bank account.",
+            "And another name on the lease.",
+            "I thought it was another woman.",
+            "She said it was worse.",
+            "She handed me a folder.",
+            "Inside were photos, receipts, and a lease agreement.",
+            "The apartment was paid from our wedding savings.",
+        ],
+        "twist": "The second name on the lease was my sister's.",
+        "closer": "I still wore the dress. I just did not walk toward him.",
+    },
+    {
+        "label": "fake pregnancy",
+        "queries": STICKY_QUERIES,
+        "hook": "My girlfriend said she was pregnant, but the doctor congratulated my roommate instead of me.",
+        "beats": [
+            "I thought I heard wrong.",
+            "She squeezed my hand too hard.",
+            "My roommate stopped smiling.",
+            "The doctor looked at the insurance form.",
+            "Then he looked at my roommate.",
+            "He said, congratulations, dad.",
+            "The room went silent.",
+            "My girlfriend said it was a paperwork mistake.",
+            "My roommate said nothing.",
+            "That was how I knew.",
+        ],
+        "twist": "She had used his insurance card for three appointments and forgot to change the name.",
+        "closer": "The baby was not mine. The betrayal was.",
+    },
+    {
+        "label": "hidden camera",
+        "queries": STICKY_QUERIES,
+        "hook": "My boyfriend bought me a bedside lamp, and my brother found a camera hidden inside it.",
+        "beats": [
+            "He insisted I keep it facing the bed.",
+            "He said the light made me look beautiful.",
+            "My brother works in security.",
+            "He noticed a tiny reflection in the shade.",
+            "We opened the lamp and found a camera.",
+            "I called my boyfriend on speaker.",
+            "I asked why there was a camera in my room.",
+            "He did not ask what camera.",
+            "He asked, which lamp.",
+        ],
+        "twist": "There were cameras in the clock, the charger, and the smoke alarm too.",
+        "closer": "I thought he was romantic. He was building a prison.",
+    },
+    {
+        "label": "work affair",
+        "queries": STICKY_QUERIES,
+        "hook": "My wife told me her boss was harmless, then I found our house key on his keychain.",
+        "beats": [
+            "He came over for a work dinner.",
+            "He acted too comfortable in my kitchen.",
+            "He knew where we kept the wine glasses.",
+            "He knew our dog hated the back door.",
+            "I tried to stay calm.",
+            "Then he dropped his keys on the counter.",
+            "Our spare house key was hanging next to his car key.",
+            "My wife said it was for emergencies.",
+            "I asked what emergency happened at midnight last Tuesday.",
+        ],
+        "twist": "That was when he said, she told me you were separated.",
+        "closer": "I was the only person in my marriage who did not know it was over.",
+    },
+    {
+        "label": "wedding speech",
+        "queries": STICKY_QUERIES,
+        "hook": "The best man's wedding speech started with, I am sorry, but the groom paid me to lie.",
+        "beats": [
+            "Everyone thought it was a joke.",
+            "The groom shouted his name.",
+            "The bride stopped smiling.",
+            "The best man pulled out his phone.",
+            "He said the groom wanted one last weekend before marriage.",
+            "Then he showed the hotel messages.",
+            "The bride's father stood up.",
+            "The groom said it was taken out of context.",
+            "Then the hotel receipt appeared on the screen.",
+        ],
+        "twist": "The receipt was from the night before the wedding.",
+        "closer": "The bride never said a word. She just handed him the ring.",
+    },
+    {
+        "label": "family money",
+        "queries": STICKY_QUERIES,
+        "hook": "My sister begged me to pay for her surgery, then posted vacation photos from the hospital bed.",
+        "beats": [
+            "She said insurance denied everything.",
+            "My parents cried on the phone.",
+            "I emptied my savings.",
+            "She thanked me like I saved her life.",
+            "Three days later, she posted from a beach resort.",
+            "The caption said, healing era.",
+            "I thought it was an old photo.",
+            "Then I saw the hospital bracelet.",
+            "It matched the fundraiser photos exactly.",
+        ],
+        "twist": "There was no surgery. The doctor she named had retired five years earlier.",
+        "closer": "My parents still asked me to forgive her because family is family.",
+    },
+]
+
+FRESH_CONFESSIONS = STRONG_CONFESSIONS
+
 RECENT_HOOKS: list[str] = []
 
 TOPICS[FRESH_TOPIC_NAME] = {
@@ -552,7 +793,7 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
         topic = TOPICS[FRESH_TOPIC_NAME]
         confession = choose_fresh_confession()
         topic_label = confession["label"]
-        topic["queries"] = confession["queries"] + random.sample(STICKY_QUERIES, k=4)
+        topic["queries"] = STICKY_QUERIES.copy()
     else:
         topic = TOPICS[topic_name]
         confession = random.choice(topic["confessions"])
