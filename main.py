@@ -25,15 +25,17 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
-VOICE = os.getenv("VOICE", "en-US-GuyNeural")
+VOICE = os.getenv("VOICE", "en-US-DavisNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
-EDGE_RATE = os.getenv("EDGE_RATE", "+2%")
-EDGE_PITCH = os.getenv("EDGE_PITCH", "-4Hz")
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.92"))
+EDGE_RATE = os.getenv("EDGE_RATE", "-8%")
+EDGE_PITCH = os.getenv("EDGE_PITCH", "-8Hz")
 ALLOW_GTTS_FALLBACK = os.getenv("ALLOW_GTTS_FALLBACK", "false").lower() == "true"
 VIDEO_SPEED = float(os.getenv("VIDEO_SPEED", "1.35"))
 SUBTITLE_WORDS = int(os.getenv("SUBTITLE_WORDS", "3"))
-VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "70"))
+VIDEO_SECONDS = int(os.getenv("VIDEO_SECONDS", "45"))
+STORY_TARGET_WORDS = int(os.getenv("STORY_TARGET_WORDS", "115"))
+MIN_AUDIO_SECONDS = float(os.getenv("MIN_AUDIO_SECONDS", "42"))
 MAX_PARALLEL_GENERATIONS = int(os.getenv("MAX_PARALLEL_GENERATIONS", "1"))
 AUTOPILOT_ENABLED = os.getenv("AUTOPILOT_ENABLED", "false").lower() == "true"
 AUTOPILOT_USER_ID = int(os.getenv("AUTOPILOT_USER_ID", "0"))
@@ -729,6 +731,25 @@ FRESH_CONFESSIONS = STRONG_CONFESSIONS
 
 RECENT_HOOKS: list[str] = []
 
+ESCALATION_LINES = [
+    "I did not react at first because I needed proof.",
+    "So I let everyone keep talking.",
+    "The longer I stayed quiet, the worse it got.",
+    "People started looking at each other like they already knew.",
+    "That was the part that made my stomach drop.",
+    "It was not just one lie anymore.",
+    "It was a whole plan built behind my back.",
+    "I asked one simple question, and nobody could answer it.",
+    "The silence told me more than the words did.",
+    "Then I noticed one detail nobody expected me to catch.",
+    "I pulled out my phone and started recording.",
+    "That was when the confident smile disappeared.",
+    "Someone told me I was overreacting.",
+    "But people only say that when they are scared you found the truth.",
+    "I wanted to walk out, but I needed to hear the rest.",
+    "The next sentence changed everything.",
+]
+
 TOPICS[FRESH_TOPIC_NAME] = {
     "button": "Fresh drama",
     "label": "fresh confession",
@@ -781,11 +802,27 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    text = " ".join(clean_caption_text(part["text"]) for part in parts)
-    text = re.sub(r"\.\s+", ", ", text)
-    text = re.sub(r"\?\s+", "? ", text)
-    text = re.sub(r"!\s+", "! ", text)
-    return text
+    return " ".join(clean_caption_text(part["text"]) for part in parts)
+
+
+def count_part_words(parts: list[dict]) -> int:
+    return sum(len(clean_caption_text(part["text"]).split()) for part in parts)
+
+
+def extend_story_parts(parts: list[dict], topic_label: str) -> None:
+    used = {part["text"] for part in parts}
+    lines = ESCALATION_LINES.copy()
+    random.shuffle(lines)
+
+    insert_at = next((i for i, part in enumerate(parts) if part["kind"] == "twist"), max(1, len(parts) - 2))
+    for line in lines:
+        if count_part_words(parts) >= STORY_TARGET_WORDS:
+            break
+        if line in used:
+            continue
+        parts.insert(insert_at, {"kind": "story", "label": topic_label, "text": line})
+        insert_at += 1
+        used.add(line)
 
 
 def build_script(topic_name: str) -> tuple[str, list[dict]]:
@@ -807,6 +844,7 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
     parts.append({"kind": "twist", "label": "wait for it", "text": confession["twist"]})
     parts.append({"kind": "outro", "label": "comment", "text": confession["closer"]})
     parts.append({"kind": "outro", "label": "comment", "text": "What would you do next?"})
+    extend_story_parts(parts, topic_label)
 
     narration = "\n".join(part["text"] for part in parts)
     return narration, parts
@@ -883,6 +921,9 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
     while remaining > 2.0:
         filters.append("atempo=2.0")
         remaining /= 2.0
+    while remaining < 0.5:
+        filters.append("atempo=0.5")
+        remaining /= 0.5
     filters.append(f"atempo={remaining:.3f}")
 
     subprocess.run(
@@ -890,6 +931,17 @@ def speed_audio(input_path: Path, out_path: Path, speed: float) -> None:
         check=True,
         capture_output=True,
     )
+
+
+def ensure_min_audio_duration(audio_path: Path, tmp_dir: Path) -> None:
+    duration = ffprobe_duration(audio_path)
+    if duration >= MIN_AUDIO_SECONDS:
+        return
+
+    speed = max(0.35, duration / MIN_AUDIO_SECONDS)
+    stretched = tmp_dir / "voice_stretched.mp3"
+    speed_audio(audio_path, stretched, speed)
+    shutil.copyfile(stretched, audio_path)
 
 
 def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
@@ -1191,6 +1243,7 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
 
     await make_voiceover(make_tts_script(parts), voiceover)
+    await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
     write_ass_subtitles(parts, audio_seconds, subtitles)
 
