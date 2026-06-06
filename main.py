@@ -1186,7 +1186,7 @@ async def fallback(message: Message) -> None:
 async def main() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         raise RuntimeError("ffmpeg and ffprobe are required")
-await bot.delete_webhook(drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=True)
     if AUTOPILOT_ENABLED:
         asyncio.create_task(autopilot_loop())
     await dp.start_polling(bot)
