@@ -60,13 +60,19 @@ YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 #         "overlay" = gameplay fullscreen + subtitles center
 LAYOUT_MODE = os.getenv("LAYOUT_MODE", "split").lower()
 
-# Comma-separated YouTube URLs for gameplay footage
-# Defaults: popular long Minecraft + Subway Surfers gameplay videos
+# Direct MP4 URLs — no auth required, no YouTube blocking
+# Mixkit free stock videos (direct CDN links, always available)
 _default_gameplay = ",".join([
-    "https://www.youtube.com/watch?v=n8X9_MgEdCg",  # Minecraft parkour 1h
-    "https://www.youtube.com/watch?v=mUBmEJRJDhA",  # Subway Surfers 1h
-    "https://www.youtube.com/watch?v=Hc6J4kDFB6o",  # Minecraft satisfying 1h
-    "https://www.youtube.com/watch?v=tCnvbGBDsq4",  # Subway Surfers 2h
+    "https://assets.mixkit.co/videos/preview/mixkit-playing-in-a-video-game-arcade-1106-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-gamer-playing-a-first-person-shooter-game-4953-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-person-playing-a-video-game-4952-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-top-aerial-shot-of-seashore-with-rocks-1090-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-waterfall-in-forest-2213-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-open-sea-443-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-tree-with-yellow-flowers-1173-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-white-sand-beach-and-palm-trees-1564-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-rain-falling-on-the-water-of-a-lake-18312-large.mp4",
+    "https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4",
 ])
 GAMEPLAY_URLS_RAW = os.getenv("GAMEPLAY_URLS", _default_gameplay)
 GAMEPLAY_URLS = [u.strip() for u in GAMEPLAY_URLS_RAW.split(",") if u.strip()]
@@ -789,25 +795,20 @@ def get_cached_gameplay_path(url: str) -> Path:
 
 
 def download_gameplay(url: str) -> Path:
-    """Download gameplay video with yt-dlp, cache locally, return path."""
+    """Download gameplay video directly (HTTP), cache locally, return path."""
     cached = get_cached_gameplay_path(url)
-    if cached.exists() and cached.stat().st_size > 10 * 1024 * 1024:
+    if cached.exists() and cached.stat().st_size > 1 * 1024 * 1024:
         logger.info("Gameplay cache hit: %s", cached.name)
         return cached
 
     logger.info("Downloading gameplay: %s", url)
-    # Download best mp4 up to 720p to save space, prefer shorter videos
-    cmd = [
-        "yt-dlp",
-        "--no-playlist",
-        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
-        "--merge-output-format", "mp4",
-        "-o", str(cached),
-        "--no-warnings",
-        "--quiet",
-        url,
-    ]
-    subprocess.run(cmd, check=True, timeout=300)
+    session = get_session()
+    with session.get(url, stream=True, timeout=120, headers={"User-Agent": "Mozilla/5.0"}) as r:
+        r.raise_for_status()
+        with cached.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
     logger.info("Downloaded gameplay to %s (%.1f MB)", cached.name, cached.stat().st_size / 1024 / 1024)
     return cached
 
@@ -1185,9 +1186,7 @@ async def fallback(message: Message) -> None:
 async def main() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         raise RuntimeError("ffmpeg and ffprobe are required")
-    if shutil.which("yt-dlp") is None:
-        raise RuntimeError("yt-dlp is required — add it to Dockerfile or nixPkgs")
-    await bot.delete_webhook(drop_pending_updates=True)
+await bot.delete_webhook(drop_pending_updates=True)
     if AUTOPILOT_ENABLED:
         asyncio.create_task(autopilot_loop())
     await dp.start_polling(bot)
