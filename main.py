@@ -29,8 +29,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-
 VOICE = os.getenv("VOICE", "en-US-BrianNeural")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.92"))
@@ -58,110 +56,38 @@ YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 
+# Layout: "split" = gameplay bottom half + subtitles top half
+#         "overlay" = gameplay fullscreen + subtitles center
+LAYOUT_MODE = os.getenv("LAYOUT_MODE", "split").lower()
+
+# Comma-separated YouTube URLs for gameplay footage
+# Defaults: popular long Minecraft + Subway Surfers gameplay videos
+_default_gameplay = ",".join([
+    "https://www.youtube.com/watch?v=n8X9_MgEdCg",  # Minecraft parkour 1h
+    "https://www.youtube.com/watch?v=mUBmEJRJDhA",  # Subway Surfers 1h
+    "https://www.youtube.com/watch?v=Hc6J4kDFB6o",  # Minecraft satisfying 1h
+    "https://www.youtube.com/watch?v=tCnvbGBDsq4",  # Subway Surfers 2h
+])
+GAMEPLAY_URLS_RAW = os.getenv("GAMEPLAY_URLS", _default_gameplay)
+GAMEPLAY_URLS = [u.strip() for u in GAMEPLAY_URLS_RAW.split(",") if u.strip()]
+
+# Local cache dir for downloaded gameplay (persists between generations)
+GAMEPLAY_CACHE_DIR = Path(os.getenv("GAMEPLAY_CACHE_DIR", "/tmp/gameplay_cache"))
+GAMEPLAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 W, H = 1080, 1920
 FPS = 30
 
-# 9am, 3pm, 8pm US Eastern = 13:00, 19:00, 00:00 UTC
 AUTOPILOT_SCHEDULE_UTC = [13, 19, 0]
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
-if not PEXELS_API_KEY:
-    raise RuntimeError("PEXELS_API_KEY is missing")
 
 bot = Bot(BOT_TOKEN, request_timeout=300)
 dp = Dispatcher()
 active_users: set[int] = set()
 last_generated: dict[int, dict] = {}
 autopilot_fired: dict[str, set[int]] = {}
-
-
-# ── VIDEO QUERY POOLS — максимальное разнообразие ─────────────────────────────
-
-QUERY_POOLS = [
-    [
-        "hands kneading dough close up slow motion",
-        "chef flipping steak cast iron pan",
-        "knife slicing salmon close up kitchen",
-        "pasta rolling hand close up",
-        "whisk mixing batter bowl close up",
-        "pouring sauce over meat close up",
-        "shrimp cooking garlic butter pan sizzle",
-        "chopping herbs knife board close up",
-    ],
-    [
-        "satisfying slime pressing close up",
-        "kinetic sand cutting asmr close up",
-        "soap carving asmr satisfying",
-        "pressure washing concrete satisfying",
-        "sand art pouring bottle satisfying",
-        "resin art pouring close up colorful",
-        "epoxy table making close up",
-        "bubble wrap popping close up satisfying",
-    ],
-    [
-        "latte art pouring close up cafe",
-        "cocktail shaking bartender slow motion",
-        "wine pouring glass close up red",
-        "cold brew coffee drip close up",
-        "smoothie blending colorful close up",
-        "hot chocolate pouring marshmallow close up",
-        "juice squeezing orange close up slow",
-        "tea pouring cup steam close up",
-    ],
-    [
-        "rain drops window glass close up night",
-        "candle flame burning close up dark",
-        "fireplace burning logs close up warm",
-        "ocean waves crashing rocks slow motion",
-        "leaves rustling wind close up autumn",
-        "snow falling window slow motion night",
-        "sunset reflection water surface close up",
-        "forest path fog morning atmospheric",
-    ],
-    [
-        "city street night neon lights blur",
-        "driving highway night timelapse pov",
-        "subway train arriving platform night",
-        "coffee shop window rain outside cozy",
-        "hands typing laptop dark room night",
-        "phone scrolling dark close up hands",
-        "apartment window city lights night view",
-        "walking city puddle reflection rainy night",
-    ],
-    [
-        "counting cash money close up hands",
-        "credit card payment terminal close up",
-        "signing documents pen hand close up",
-        "opening envelope letter close up hands",
-        "calculator typing numbers close up desk",
-        "shredding paper document office close up",
-        "hands opening safe box close up",
-        "keys dropping table close up",
-    ],
-    [
-        "person walking alone corridor dark",
-        "silhouette person window rain looking out",
-        "hands wringing nervous close up dark",
-        "door closing shut hallway pov",
-        "person sitting stairs head down dark",
-        "feet walking wet pavement night",
-        "hands phone typing nervous close up",
-        "person shadow wall dramatic light",
-    ],
-]
-
-def pick_queries(n: int = 8) -> list[str]:
-    result = []
-    pools = QUERY_POOLS.copy()
-    random.shuffle(pools)
-    for pool in pools:
-        result.append(random.choice(pool))
-        if len(result) >= n:
-            break
-    while len(result) < n:
-        result.append(random.choice(random.choice(QUERY_POOLS)))
-    return result
 
 
 # ── VIRAL STORIES ─────────────────────────────────────────────────────────────
@@ -531,18 +457,7 @@ ESCALATION_LINES = [
     "The next thing I saw changed the entire story.",
 ]
 
-TOPICS = {
-    "Fresh drama": {
-        "button": "Fresh drama",
-        "label": "fresh confession",
-        "question": "Generate a fresh confession with a strong hook.",
-        "queries": pick_queries(8),
-        "confessions": [],
-    }
-}
-
 FRESH_TOPIC_NAME = "Fresh drama"
-BUTTON_TO_TOPIC = {topic["button"]: name for name, topic in TOPICS.items()}
 
 BTN_START = "🏠 Старт"
 BTN_GENERATE = "🎬 Генерировать видео"
@@ -646,6 +561,8 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
     return narration, parts
 
 
+# ── TTS ───────────────────────────────────────────────────────────────────────
+
 async def make_voiceover(text: str, out_path: Path) -> None:
     raw_path = out_path.with_name(f"{out_path.stem}_raw.mp3")
     if TTS_PROVIDER == "gtts":
@@ -735,7 +652,7 @@ def ensure_min_audio_duration(audio_path: Path, tmp_dir: Path) -> None:
     shutil.copyfile(stretched, audio_path)
 
 
-# ── СУБТИТРЫ — ПОЛНОСТЬЮ ЖЁЛТЫЕ ──────────────────────────────────────────────
+# ── СУБТИТРЫ — ЖЁЛТЫЕ ────────────────────────────────────────────────────────
 
 def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
     words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
@@ -796,17 +713,28 @@ def ass_escape(text: str) -> str:
     return text
 
 
-def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path) -> None:
-    """
-    ВСЕ субтитры жёлтые. ASS цвет: &HAABBGGRR.
-    Жёлтый = R=FF G=FF B=00 → &H0000FFFF
-    Никакого белого или другого цвета.
-    """
+def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path, layout: str = "split") -> None:
     events = estimate_subtitle_timings(parts, audio_seconds)
+    YELLOW  = "&H0000FFFF"
+    BLACK_O = "&H00000000"
+    DARK_BG = "&HAA000000"
 
-    YELLOW  = "&H0000FFFF"   # жёлтый
-    BLACK_O = "&H00000000"   # чёрный outline
-    DARK_BG = "&HAA000000"   # полупрозрачный чёрный фон
+    # In split mode subtitles sit in the top half (MarginV pushes up from center)
+    # In overlay mode subtitles sit in the center of full screen
+    if layout == "split":
+        # Top half of 1920 = roughly top 960px. Alignment=8 = top-center.
+        # MarginV from top edge
+        sub_align = 8
+        margin_v = 40
+        font_default = 108
+        font_hook = 124
+        font_twist = 128
+    else:
+        sub_align = 5   # center
+        margin_v = 0
+        font_default = 132
+        font_hook = 148
+        font_twist = 152
 
     header = (
         "[Script Info]\n"
@@ -817,9 +745,9 @@ def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path)
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,Arial,132,{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,9,4,5,64,64,0,1\n"
-        f"Style: Hook,Arial,148,{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,5,58,58,0,1\n"
-        f"Style: Twist,Arial,152,{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,5,58,58,0,1\n"
+        f"Style: Default,Arial,{font_default},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,9,4,{sub_align},64,64,{margin_v},1\n"
+        f"Style: Hook,Arial,{font_hook},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,{sub_align},58,58,{margin_v},1\n"
+        f"Style: Twist,Arial,{font_twist},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,{sub_align},58,58,{margin_v},1\n"
         f"Style: Label,Arial,52,{YELLOW},&H000000FF,{BLACK_O},&HCC000000,1,0,0,0,100,100,0,0,3,18,0,8,90,90,142,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
@@ -852,96 +780,130 @@ def ffprobe_duration(path: Path) -> float:
     return float(proc.stdout.strip())
 
 
-def search_pexels_videos(query: str, per_page: int = 12) -> list[dict]:
-    logger.info("Pexels: %s", query)
-    r = get_session().get(
-        "https://api.pexels.com/videos/search",
-        params={"query": query, "per_page": per_page, "orientation": "portrait"},
-        headers={"Authorization": PEXELS_API_KEY},
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json().get("videos", [])
+# ── GAMEPLAY DOWNLOAD via yt-dlp ──────────────────────────────────────────────
+
+def get_cached_gameplay_path(url: str) -> Path:
+    """Return the cached path for a given URL (may not exist yet)."""
+    safe = re.sub(r"[^a-zA-Z0-9]", "_", url)[:60]
+    return GAMEPLAY_CACHE_DIR / f"{safe}.mp4"
 
 
-def best_video_file(video: dict) -> str | None:
-    files = [f for f in video.get("video_files", []) if f.get("link")]
-    if not files:
-        return None
-    portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
-    strong = [f for f in portrait if (f.get("height") or 0) >= 1280]
-    candidates = strong or portrait or files
-    candidates.sort(key=lambda f: (f.get("height") or 0, f.get("size") or 0), reverse=True)
-    return candidates[0]["link"]
+def download_gameplay(url: str) -> Path:
+    """Download gameplay video with yt-dlp, cache locally, return path."""
+    cached = get_cached_gameplay_path(url)
+    if cached.exists() and cached.stat().st_size > 10 * 1024 * 1024:
+        logger.info("Gameplay cache hit: %s", cached.name)
+        return cached
+
+    logger.info("Downloading gameplay: %s", url)
+    # Download best mp4 up to 720p to save space, prefer shorter videos
+    cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+        "--merge-output-format", "mp4",
+        "-o", str(cached),
+        "--no-warnings",
+        "--quiet",
+        url,
+    ]
+    subprocess.run(cmd, check=True, timeout=300)
+    logger.info("Downloaded gameplay to %s (%.1f MB)", cached.name, cached.stat().st_size / 1024 / 1024)
+    return cached
 
 
-def download_pexels_clips(tmp_dir: Path, wanted: int = 10) -> list[Path]:
-    queries = pick_queries(wanted + 2)
-    urls: list[str] = []
-    for query in queries:
-        for video in search_pexels_videos(query):
-            url = best_video_file(video)
-            if url and url not in urls:
-                urls.append(url)
-            if len(urls) >= wanted:
-                break
-        if len(urls) >= wanted:
-            break
-    if not urls:
-        raise RuntimeError("No Pexels videos found")
-    clips: list[Path] = []
-    session = get_session()
-    for index, url in enumerate(urls[:wanted], start=1):
-        path = tmp_dir / f"source_{index:02d}.mp4"
-        logger.info("Downloading clip %d/%d", index, len(urls[:wanted]))
-        with session.get(url, stream=True, timeout=60) as r:
-            r.raise_for_status()
-            with path.open("wb") as f:
-                for chunk in r.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-        clips.append(path)
-    return clips
+def get_gameplay_clip(url: str, tmp_dir: Path, target_seconds: float) -> Path:
+    """
+    Extract a random segment from cached gameplay.
+    Returns path to extracted clip.
+    """
+    source = download_gameplay(url)
+    src_duration = ffprobe_duration(source)
+
+    max_start = max(0, src_duration - target_seconds - 5)
+    seek = random.uniform(30, max_start) if max_start > 30 else random.uniform(0, max(0, max_start))
+
+    out = tmp_dir / "gameplay_raw.mp4"
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{seek:.2f}",
+        "-i", str(source),
+        "-t", f"{target_seconds + 2:.2f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-an",
+        str(out),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    return out
 
 
-def make_video_segments(source_clips: list[Path], tmp_dir: Path, target_seconds: float) -> list[Path]:
-    segment_seconds = 1.15
-    needed = max(8, int(target_seconds // segment_seconds) + 2)
-    segments: list[Path] = []
-    for index in range(needed):
-        src = source_clips[index % len(source_clips)]
-        out = tmp_dir / f"segment_{index:02d}.mp4"
-        duration = min(segment_seconds, max(0.75, target_seconds - index * segment_seconds))
-        input_duration = duration * VIDEO_SPEED
-        try:
-            src_duration = ffprobe_duration(src)
-        except Exception:
-            src_duration = 0
-        seek = 0.0
-        if src_duration > input_duration + 2.5:
-            seek = random.uniform(0.4, src_duration - input_duration - 0.4)
+def prepare_gameplay_for_layout(raw_clip: Path, tmp_dir: Path, layout: str, audio_seconds: float) -> Path:
+    """
+    Resize and crop gameplay for the chosen layout.
+    split:   gameplay fills bottom half (1080x960), story/subs in top half (1080x960)
+    overlay: gameplay fills full 1080x1920 with dark overlay
+    """
+    out = tmp_dir / "gameplay_prepared.mp4"
+
+    if layout == "split":
+        # Bottom half: 1080 x 960
+        vf = (
+            f"scale=1080:960:force_original_aspect_ratio=increase,"
+            f"crop=1080:960,"
+            f"setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
+        )
+    else:
+        # Full screen with dark semi-transparent overlay for readability
         vf = (
             f"scale={W}:{H}:force_original_aspect_ratio=increase,"
             f"crop={W}:{H},"
-            "unsharp=5:5:0.55:3:3:0.25,"
+            f"colorlevels=romin=0:gomin=0:bomin=0:romax=0.55:gomax=0.55:bomax=0.55,"
             f"setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
         )
-        cmd = ["ffmpeg", "-y"]
-        if seek:
-            cmd += ["-ss", f"{seek:.2f}"]
-        cmd += ["-stream_loop", "-1", "-i", str(src), "-t", f"{input_duration:.2f}",
-                "-vf", vf, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)]
-        subprocess.run(cmd, check=True, capture_output=True)
-        segments.append(out)
-    return segments
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-i", str(raw_clip),
+        "-t", f"{audio_seconds:.2f}",
+        "-vf", vf,
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        str(out),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=180)
+    return out
 
 
-def concat_segments(segments: list[Path], tmp_dir: Path) -> Path:
-    list_file = tmp_dir / "segments.txt"
-    list_file.write_text("".join(f"file '{s.as_posix()}'\n" for s in segments), encoding="utf-8")
+def make_black_top_half(tmp_dir: Path, audio_seconds: float) -> Path:
+    """Create a solid black 1080x960 clip for the top half (text area) in split mode."""
+    out = tmp_dir / "black_top.mp4"
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=black:size=1080x960:rate={FPS}",
+        "-t", f"{audio_seconds:.2f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        str(out),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+    return out
+
+
+def stack_split_layout(top: Path, bottom: Path, tmp_dir: Path, audio_seconds: float) -> Path:
+    """Stack top (black/text area) and bottom (gameplay) into 1080x1920."""
     out = tmp_dir / "base.mp4"
-    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out)],
-                   check=True, capture_output=True)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(top),
+        "-i", str(bottom),
+        "-filter_complex",
+        f"[0:v][1:v]vstack=inputs=2[v]",
+        "-map", "[v]",
+        "-t", f"{audio_seconds:.2f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        str(out),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
     return out
 
 
@@ -959,6 +921,8 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
     )
 
 
+# ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
+
 async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     tmp_dir = Path(tempfile.mkdtemp(prefix="storybot_"))
     narration, parts = build_script(topic_name)
@@ -966,16 +930,35 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     subtitles = tmp_dir / "subs.ass"
     out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
 
+    # TTS
     await make_voiceover(make_tts_script(parts), voiceover)
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
-    write_ass_subtitles(parts, audio_seconds, subtitles)
 
-    source_clips = await asyncio.to_thread(download_pexels_clips, tmp_dir)
-    segments = await asyncio.to_thread(make_video_segments, source_clips, tmp_dir, audio_seconds)
-    base_video = await asyncio.to_thread(concat_segments, segments, tmp_dir)
+    # Subtitles
+    write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
+
+    # Pick random gameplay URL
+    gameplay_url = random.choice(GAMEPLAY_URLS)
+    logger.info("Using gameplay URL: %s", gameplay_url)
+
+    # Download/cache gameplay and extract segment
+    raw_clip = await asyncio.to_thread(get_gameplay_clip, gameplay_url, tmp_dir, audio_seconds + 5)
+
+    if LAYOUT_MODE == "split":
+        gameplay_prepared = await asyncio.to_thread(
+            prepare_gameplay_for_layout, raw_clip, tmp_dir, "split", audio_seconds
+        )
+        black_top = await asyncio.to_thread(make_black_top_half, tmp_dir, audio_seconds)
+        base_video = await asyncio.to_thread(stack_split_layout, black_top, gameplay_prepared, tmp_dir, audio_seconds)
+    else:
+        base_video = await asyncio.to_thread(
+            prepare_gameplay_for_layout, raw_clip, tmp_dir, "overlay", audio_seconds
+        )
+
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
 
+    # Compress if too large for Telegram
     size_mb = out_path.stat().st_size / (1024 * 1024)
     if size_mb > 45:
         compressed = tmp_dir / "compressed.mp4"
@@ -990,6 +973,8 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
 
     return out_path, narration
 
+
+# ── YOUTUBE ───────────────────────────────────────────────────────────────────
 
 def make_youtube_metadata(topic_name: str, narration: str) -> tuple[str, str, list[str]]:
     lines = [l for l in narration.splitlines() if l.strip()]
@@ -1034,42 +1019,7 @@ def upload_to_youtube(video_path: Path, topic_name: str, narration: str) -> str:
     return f"https://www.youtube.com/watch?v={response['id']}"
 
 
-async def start_generation(message: Message, topic_name: str) -> None:
-    user_id = message.from_user.id
-    if len(active_users) >= MAX_PARALLEL_GENERATIONS and user_id not in active_users:
-        await message.answer("Сейчас идёт генерация. Попробуй через пару минут.")
-        return
-    if user_id in active_users:
-        await message.answer("Твоё видео уже генерируется.")
-        return
-    active_users.add(user_id)
-    last_generated.setdefault(user_id, {})["last_topic"] = topic_name
-    await message.answer("⏳ Генерирую видео...\nЗаймёт 1–3 минуты.", reply_markup=keyboard_main())
-    asyncio.create_task(run_generation(message, topic_name))
-
-
-async def run_generation(message: Message, topic_name: str) -> None:
-    user_id = message.from_user.id
-    try:
-        video_path, narration = await generate_story_video(topic_name)
-        title, description, _ = make_youtube_metadata(topic_name, narration)
-        last_generated[user_id] = {"path": video_path, "topic": topic_name,
-                                   "narration": narration, "last_topic": topic_name}
-        await message.answer_video(
-            FSInputFile(video_path, filename="story_short.mp4"),
-            caption=f"✅ <b>Готово!</b>\n\n<b>Название:</b> {title}\n\n<b>Описание:</b>\n{description}",
-            parse_mode="HTML", supports_streaming=True, request_timeout=300,
-        )
-        await message.answer(
-            f"📝 <b>Текст озвучки:</b>\n\n{narration}\n\nВыбери действие 👇",
-            parse_mode="HTML", reply_markup=keyboard_after_generation(),
-        )
-    except Exception as e:
-        logger.error("Generation failed: %s", e, exc_info=True)
-        await message.answer(f"❌ Ошибка: {e}", reply_markup=keyboard_main())
-    finally:
-        active_users.discard(user_id)
-
+# ── AUTOPILOT ─────────────────────────────────────────────────────────────────
 
 def seconds_until_next_slot() -> tuple[int, int]:
     now = datetime.now(timezone.utc)
@@ -1137,6 +1087,45 @@ async def autopilot_loop() -> None:
         await asyncio.sleep(60)
 
 
+# ── BOT HANDLERS ──────────────────────────────────────────────────────────────
+
+async def start_generation(message: Message, topic_name: str) -> None:
+    user_id = message.from_user.id
+    if len(active_users) >= MAX_PARALLEL_GENERATIONS and user_id not in active_users:
+        await message.answer("Сейчас идёт генерация. Попробуй через пару минут.")
+        return
+    if user_id in active_users:
+        await message.answer("Твоё видео уже генерируется.")
+        return
+    active_users.add(user_id)
+    last_generated.setdefault(user_id, {})["last_topic"] = topic_name
+    await message.answer("⏳ Генерирую видео...\nЗаймёт 1–3 минуты.", reply_markup=keyboard_main())
+    asyncio.create_task(run_generation(message, topic_name))
+
+
+async def run_generation(message: Message, topic_name: str) -> None:
+    user_id = message.from_user.id
+    try:
+        video_path, narration = await generate_story_video(topic_name)
+        title, description, _ = make_youtube_metadata(topic_name, narration)
+        last_generated[user_id] = {"path": video_path, "topic": topic_name,
+                                   "narration": narration, "last_topic": topic_name}
+        await message.answer_video(
+            FSInputFile(video_path, filename="story_short.mp4"),
+            caption=f"✅ <b>Готово!</b>\n\n<b>Название:</b> {title}\n\n<b>Описание:</b>\n{description}",
+            parse_mode="HTML", supports_streaming=True, request_timeout=300,
+        )
+        await message.answer(
+            f"📝 <b>Текст озвучки:</b>\n\n{narration}\n\nВыбери действие 👇",
+            parse_mode="HTML", reply_markup=keyboard_after_generation(),
+        )
+    except Exception as e:
+        logger.error("Generation failed: %s", e, exc_info=True)
+        await message.answer(f"❌ Ошибка: {e}", reply_markup=keyboard_main())
+    finally:
+        active_users.discard(user_id)
+
+
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
@@ -1180,8 +1169,10 @@ async def publish_now(message: Message) -> None:
     try:
         url = await asyncio.to_thread(upload_to_youtube, data["path"], data["topic"], data["narration"])
         title, desc, _ = make_youtube_metadata(data["topic"], data["narration"])
-        await message.answer(f"✅ <b>Опубликовано!</b>\n\n🔗 {url}\n\n<b>Название:</b> {title}\n\n<b>Описание:</b>\n{desc}",
-                             parse_mode="HTML", reply_markup=keyboard_main())
+        await message.answer(
+            f"✅ <b>Опубликовано!</b>\n\n🔗 {url}\n\n<b>Название:</b> {title}\n\n<b>Описание:</b>\n{desc}",
+            parse_mode="HTML", reply_markup=keyboard_main()
+        )
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}", reply_markup=keyboard_main())
 
@@ -1194,6 +1185,8 @@ async def fallback(message: Message) -> None:
 async def main() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         raise RuntimeError("ffmpeg and ffprobe are required")
+    if shutil.which("yt-dlp") is None:
+        raise RuntimeError("yt-dlp is required — add it to Dockerfile or nixPkgs")
     await bot.delete_webhook(drop_pending_updates=True)
     if AUTOPILOT_ENABLED:
         asyncio.create_task(autopilot_loop())
