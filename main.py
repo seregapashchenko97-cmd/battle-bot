@@ -56,26 +56,25 @@ YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+
 # Layout: "split" = gameplay bottom half + subtitles top half
 #         "overlay" = gameplay fullscreen + subtitles center
 LAYOUT_MODE = os.getenv("LAYOUT_MODE", "split").lower()
 
-# Direct MP4 URLs — no auth required, no YouTube blocking
-# Mixkit free stock videos (direct CDN links, always available)
-_default_gameplay = ",".join([
-    "https://assets.mixkit.co/videos/preview/mixkit-playing-in-a-video-game-arcade-1106-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-gamer-playing-a-first-person-shooter-game-4953-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-person-playing-a-video-game-4952-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-top-aerial-shot-of-seashore-with-rocks-1090-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-waterfall-in-forest-2213-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-open-sea-443-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-tree-with-yellow-flowers-1173-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-white-sand-beach-and-palm-trees-1564-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-rain-falling-on-the-water-of-a-lake-18312-large.mp4",
-    "https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4",
-])
-GAMEPLAY_URLS_RAW = os.getenv("GAMEPLAY_URLS", _default_gameplay)
-GAMEPLAY_URLS = [u.strip() for u in GAMEPLAY_URLS_RAW.split(",") if u.strip()]
+# Pexels search queries for background video
+PEXELS_QUERIES = [
+    "satisfying cooking close up",
+    "rain window night",
+    "candle flame dark",
+    "ocean waves slow motion",
+    "city lights night",
+    "hands typing dark",
+    "forest fog morning",
+    "fireplace burning",
+    "coffee pouring close up",
+    "driving highway night",
+]
 
 # Local cache dir for downloaded gameplay (persists between generations)
 GAMEPLAY_CACHE_DIR = Path(os.getenv("GAMEPLAY_CACHE_DIR", "/tmp/gameplay_cache"))
@@ -786,56 +785,89 @@ def ffprobe_duration(path: Path) -> float:
     return float(proc.stdout.strip())
 
 
-# ── GAMEPLAY DOWNLOAD via yt-dlp ──────────────────────────────────────────────
+# ── PEXELS VIDEO BACKGROUND ──────────────────────────────────────────────────
 
-def get_cached_gameplay_path(url: str) -> Path:
-    """Return the cached path for a given URL (may not exist yet)."""
-    safe = re.sub(r"[^a-zA-Z0-9]", "_", url)[:60]
+def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
+    logger.info("Pexels search: %s", query)
+    r = get_session().get(
+        "https://api.pexels.com/videos/search",
+        params={"query": query, "per_page": per_page, "orientation": "portrait"},
+        headers={"Authorization": PEXELS_API_KEY},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json().get("videos", [])
+
+
+def best_video_file(video: dict) -> str | None:
+    files = [f for f in video.get("video_files", []) if f.get("link")]
+    if not files:
+        return None
+    portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
+    strong = [f for f in portrait if (f.get("height") or 0) >= 1280]
+    candidates = strong or portrait or files
+    candidates.sort(key=lambda f: (f.get("height") or 0), reverse=True)
+    return candidates[0]["link"]
+
+
+def get_cached_gameplay_path(key: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9]", "_", key)[:60]
     return GAMEPLAY_CACHE_DIR / f"{safe}.mp4"
 
 
-def download_gameplay(url: str) -> Path:
-    """Download gameplay video directly (HTTP), cache locally, return path."""
-    cached = get_cached_gameplay_path(url)
-    if cached.exists() and cached.stat().st_size > 1 * 1024 * 1024:
-        logger.info("Gameplay cache hit: %s", cached.name)
-        return cached
-
-    logger.info("Downloading gameplay: %s", url)
-    session = get_session()
-    with session.get(url, stream=True, timeout=120, headers={"User-Agent": "Mozilla/5.0"}) as r:
+def download_pexels_clip(url: str, out_path: Path) -> None:
+    logger.info("Downloading Pexels clip: %s", url[:80])
+    with get_session().get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
-        with cached.open("wb") as f:
+        with out_path.open("wb") as f:
             for chunk in r.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     f.write(chunk)
-    logger.info("Downloaded gameplay to %s (%.1f MB)", cached.name, cached.stat().st_size / 1024 / 1024)
-    return cached
 
 
-def get_gameplay_clip(url: str, tmp_dir: Path, target_seconds: float) -> Path:
-    """
-    Extract a random segment from cached gameplay.
-    Returns path to extracted clip.
-    """
-    source = download_gameplay(url)
-    src_duration = ffprobe_duration(source)
+def get_background_clips(tmp_dir: Path, wanted: int = 6) -> list[Path]:
+    """Fetch background clips from Pexels, use cache when available."""
+    queries = random.sample(PEXELS_QUERIES, min(wanted, len(PEXELS_QUERIES)))
+    clips: list[Path] = []
+    for query in queries:
+        if len(clips) >= wanted:
+            break
+        cached = get_cached_gameplay_path(query)
+        if cached.exists() and cached.stat().st_size > 500_000:
+            logger.info("Cache hit: %s", query)
+            clips.append(cached)
+            continue
+        try:
+            videos = search_pexels_videos(query, per_page=5)
+            if not videos:
+                continue
+            url = best_video_file(random.choice(videos))
+            if not url:
+                continue
+            download_pexels_clip(url, cached)
+            clips.append(cached)
+        except Exception as e:
+            logger.warning("Pexels clip failed for %s: %s", query, e)
+    if not clips:
+        raise RuntimeError("Could not fetch any Pexels clips")
+    return clips
 
-    max_start = max(0, src_duration - target_seconds - 5)
-    seek = random.uniform(30, max_start) if max_start > 30 else random.uniform(0, max(0, max_start))
 
-    out = tmp_dir / "gameplay_raw.mp4"
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{seek:.2f}",
-        "-i", str(source),
-        "-t", f"{target_seconds + 2:.2f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-        "-an",
-        str(out),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-    return out
+def get_gameplay_clip(unused_url: str, tmp_dir: Path, target_seconds: float) -> Path:
+    """Download Pexels clips and concat into one background clip."""
+    clips = get_background_clips(tmp_dir, wanted=6)
+    # concat all clips into one long source, then trim
+    list_file = tmp_dir / "bg_list.txt"
+    list_file.write_text("\n".join(f"file '{c.as_posix()}' " for c in clips) + "\n", encoding="utf-8")
+    concat_out = tmp_dir / "gameplay_raw.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+         "-t", f"{target_seconds + 5:.2f}",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an",
+         str(concat_out)],
+        check=True, capture_output=True, timeout=180,
+    )
+    return concat_out
 
 
 def prepare_gameplay_for_layout(raw_clip: Path, tmp_dir: Path, layout: str, audio_seconds: float) -> Path:
@@ -939,12 +971,8 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     # Subtitles
     write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
 
-    # Pick random gameplay URL
-    gameplay_url = random.choice(GAMEPLAY_URLS)
-    logger.info("Using gameplay URL: %s", gameplay_url)
-
-    # Download/cache gameplay and extract segment
-    raw_clip = await asyncio.to_thread(get_gameplay_clip, gameplay_url, tmp_dir, audio_seconds + 5)
+    # Download Pexels background clips
+    raw_clip = await asyncio.to_thread(get_gameplay_clip, "", tmp_dir, audio_seconds + 5)
 
     if LAYOUT_MODE == "split":
         gameplay_prepared = await asyncio.to_thread(
