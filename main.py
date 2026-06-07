@@ -900,36 +900,21 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
-    """Insert beep + 0.35s pause exactly after hook using amerge filter_complex."""
+    """Insert 0.5s pause after hook + resample to stereo 44100Hz."""
     split = max(0.5, hook_duration - 0.05)
     out = tmp_dir / "voice_with_beep.mp3"
-
-    # Use amix/adelay approach: overlay beep at exact timestamp on top of voiceover
-    # Then concat silence gap by building the full track with filter_complex
-    # All inputs normalized to pcm first via aresample
+    # Split → insert silence → rejoin using single filter_complex
     fc = (
-        # Input 0: full voiceover — split at hook end
         f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
         f"atrim=0:{split:.3f},asetpts=PTS-STARTPTS[p1];"
-
         f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
         f"atrim={split:.3f},asetpts=PTS-STARTPTS[p2];"
-
-        # Input 1: beep
-        f"[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-        f"afade=t=in:st=0:d=0.02,afade=t=out:st=0.12:d=0.03,volume=0.5[beep];"
-
-        # Input 2: silence
-        f"[2:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[sil];"
-
-        # Concat
-        f"[p1][beep][sil][p2]concat=n=4:v=0:a=1[out]"
+        f"aevalsrc=0:c=stereo:s=44100:d=0.5[sil];"
+        f"[p1][sil][p2]concat=n=3:v=0:a=1[out]"
     )
     subprocess.run([
         "ffmpeg", "-y",
         "-i", str(voiceover),
-        "-f", "lavfi", "-i", "sine=frequency=900:duration=0.15",
-        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo:d=0.35",
         "-filter_complex", fc,
         "-map", "[out]",
         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
