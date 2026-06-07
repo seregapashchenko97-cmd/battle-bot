@@ -900,26 +900,38 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
-    """Insert 0.5s pause after hook + resample to stereo 44100Hz."""
+    """Insert 0.5s pause after hook. Simple 3-step approach."""
     split = max(0.5, hook_duration - 0.05)
     out = tmp_dir / "voice_with_beep.mp3"
-    # Split → insert silence → rejoin using single filter_complex
-    fc = (
-        f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-        f"atrim=0:{split:.3f},asetpts=PTS-STARTPTS[p1];"
-        f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-        f"atrim={split:.3f},asetpts=PTS-STARTPTS[p2];"
-        f"aevalsrc=0:c=stereo:s=44100:d=0.5[sil];"
-        f"[p1][sil][p2]concat=n=3:v=0:a=1[out]"
-    )
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", str(voiceover),
-        "-filter_complex", fc,
-        "-map", "[out]",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-        str(out)
-    ], check=True, capture_output=True)
+
+    p1 = tmp_dir / "hook_part.mp3"
+    p2 = tmp_dir / "rest_part.mp3"
+    sil = tmp_dir / "silence_05.mp3"
+
+    # Step 1: extract hook
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover),
+                    "-t", f"{split:.3f}",
+                    "-c:a", "libmp3lame", "-ar", "44100", "-ac", "2", str(p1)],
+                   check=True, capture_output=True)
+    # Step 2: extract rest
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover),
+                    "-ss", f"{split:.3f}",
+                    "-c:a", "libmp3lame", "-ar", "44100", "-ac", "2", str(p2)],
+                   check=True, capture_output=True)
+    # Step 3: generate silence
+    subprocess.run(["ffmpeg", "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", "0.5",
+                    "-c:a", "libmp3lame", "-ar", "44100", "-ac", "2", str(sil)],
+                   check=True, capture_output=True)
+    # Step 4: concat with filter_complex (all same format now)
+    subprocess.run(["ffmpeg", "-y",
+                    "-i", str(p1), "-i", str(sil), "-i", str(p2),
+                    "-filter_complex", "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]",
+                    "-map", "[out]",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    str(out)],
+                   check=True, capture_output=True)
     return out
 
 
