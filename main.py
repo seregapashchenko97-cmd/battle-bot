@@ -48,6 +48,9 @@ AUTOPILOT_TOPICS = [x.strip() for x in os.getenv("AUTOPILOT_TOPICS", "").split("
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 YOUTUBE_UPLOAD_ENABLED = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").lower() == "true"
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
@@ -515,6 +518,12 @@ def make_tts_script(parts: list[dict]) -> str:
     return ". ".join(sentences) + "."
 
 
+def make_hook_script(parts: list[dict]) -> str:
+    """Return only the hook sentence for duration probing."""
+    hook = next((p for p in parts if p["kind"] == "hook"), parts[0])
+    return clean_caption_text(hook["text"]).rstrip(".!?") + "."
+
+
 def count_part_words(parts: list[dict]) -> int:
     return sum(len(clean_caption_text(part["text"]).split()) for part in parts)
 
@@ -537,8 +546,53 @@ def extend_story_parts(parts: list[dict], topic_label: str) -> None:
         used.add(line)
 
 
+def generate_story_with_groq() -> dict | None:
+    """Generate a fresh confession story using Groq API (free)."""
+    if not GROQ_API_KEY:
+        return None
+    prompt = """Generate a viral drama confession story for a YouTube Shorts channel.
+Return ONLY a JSON object with these exact keys:
+{
+  "label": "2-3 word category like cheating wife or work revenge",
+  "hook": "One shocking sentence that makes people stop scrolling. Under 15 words. Must be a real situation, specific detail.",
+  "beats": ["9 short sentences", "each revealing one detail", "building tension", "short like 5-8 words each"],
+  "twist": "One sentence shocking revelation that reframes everything. Start with: When I, Then I, or That was when.",
+  "closer": "One sentence satisfying ending or consequence."
+}
+Rules: Real-feeling, specific details. No fantasy. Drama niches: cheating, betrayal, revenge, family secrets, work drama, inheritance. Hook must be specific not generic."""
+
+    try:
+        r = get_session().post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.95,
+                "max_tokens": 800,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        story = __import__("json").loads(data["choices"][0]["message"]["content"])
+        # Validate required keys
+        required = {"label", "hook", "beats", "twist", "closer"}
+        if not required.issubset(story.keys()):
+            return None
+        if not isinstance(story["beats"], list) or len(story["beats"]) < 5:
+            return None
+        logger.info("Groq generated story: %s", story["label"])
+        return story
+    except Exception as e:
+        logger.warning("Groq story generation failed: %s", e)
+        return None
+
+
 def build_script(topic_name: str) -> tuple[str, list[dict]]:
-    confession = choose_fresh_confession()
+    # Try Groq first for fresh AI-generated story
+    confession = generate_story_with_groq() or choose_fresh_confession()
     topic_label = confession["label"]
     parts = [{"kind": "hook", "label": topic_label, "text": confession["hook"]}]
     for beat in confession["beats"]:
@@ -838,27 +892,25 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
          "-map", "0:v", "-map", "1:a",
          "-c:v", "libx264", "-preset", "fast", "-crf", "20",
          "-maxrate", "8M", "-bufsize", "16M",
-         "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_path)],
+         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2", "-shortest", str(out_path)],
         check=True, capture_output=True,
     )
 
 
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
-def inject_beep_after_hook(voiceover: Path, tmp_dir: Path) -> Path:
-    """Insert beep + 0.4s pause after the hook using filter_complex."""
-    total = ffprobe_duration(voiceover)
-    hook_end = min(6.0, total * 0.18)
+def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
+    """Insert beep + 0.35s pause exactly after hook using filter_complex."""
+    # hook_duration is the real TTS duration of just the hook sentence
+    # Add tiny buffer so beep starts right as hook ends
+    split = max(0.5, hook_duration - 0.05)
     out = tmp_dir / "voice_with_beep.mp3"
-    # Build audio entirely with filter_complex:
-    # [0] = voiceover, split at hook_end
-    # beep = sine wave generated inline
-    # layout: part1 + beep(0.18s) + silence(0.4s) + part2
     fc = (
-        f"[0:a]atrim=0:{hook_end:.3f},asetpts=PTS-STARTPTS[p1];"
-        f"[0:a]atrim={hook_end:.3f},asetpts=PTS-STARTPTS[p2];"
-        f"sine=frequency=880:duration=0.18,afade=t=out:st=0.10:d=0.08,volume=0.4[beep];"
-        f"anullsrc=r=44100:cl=stereo,atrim=0:0.4[sil];"
+        f"[0:a]atrim=0:{split:.3f},asetpts=PTS-STARTPTS,aresample=44100[p1];"
+        f"[0:a]atrim={split:.3f},asetpts=PTS-STARTPTS,aresample=44100[p2];"
+        f"sine=frequency=900:duration=0.15,afade=t=in:st=0:d=0.02,afade=t=out:st=0.12:d=0.03,"
+        f"volume=0.5,aresample=44100[beep];"
+        f"anullsrc=r=44100:cl=stereo,atrim=0:0.35[sil];"
         f"[p1][beep][sil][p2]concat=n=4:v=0:a=1[out]"
     )
     subprocess.run([
@@ -866,7 +918,7 @@ def inject_beep_after_hook(voiceover: Path, tmp_dir: Path) -> Path:
         "-i", str(voiceover),
         "-filter_complex", fc,
         "-map", "[out]",
-        "-c:a", "libmp3lame", "-q:a", "2",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         str(out)
     ], check=True, capture_output=True)
     return out
@@ -879,10 +931,15 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     subtitles = tmp_dir / "subs.ass"
     out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
 
-    # TTS
+    # TTS — first generate hook alone to measure its exact duration
+    hook_audio = tmp_dir / "hook_probe.mp3"
+    await make_voiceover(make_hook_script(parts), hook_audio)
+    hook_duration = ffprobe_duration(hook_audio)
+    logger.info("Hook duration: %.2fs", hook_duration)
+    # Generate full voiceover
     await make_voiceover(make_tts_script(parts), voiceover)
-    # Inject beep + pause after hook
-    voiceover = await asyncio.to_thread(inject_beep_after_hook, voiceover, tmp_dir)
+    # Inject beep exactly after hook
+    voiceover = await asyncio.to_thread(inject_beep_after_hook, voiceover, tmp_dir, hook_duration)
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
 
