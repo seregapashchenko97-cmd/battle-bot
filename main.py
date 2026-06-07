@@ -900,11 +900,11 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
-    """Resample voiceover to stereo 44100Hz 192k."""
-    out = tmp_dir / "voice_with_beep.mp3"
+    """Resample voiceover to stereo 44100Hz."""
+    out = tmp_dir / "voice_resampled.mp3"
     subprocess.run([
         "ffmpeg", "-y", "-i", str(voiceover),
-        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+        "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         str(out)
     ], check=True, capture_output=True)
     return out
