@@ -775,7 +775,6 @@ BG_PRESETS = [
 def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
     out = tmp_dir / "base.mp4"
 
-    # Use uploaded gameplay files if available
     uploaded = sorted(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
     if uploaded:
         src_file = random.choice(uploaded)
@@ -783,9 +782,17 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
         src_duration = ffprobe_duration(src_file)
         max_seek = max(0, src_duration - audio_seconds - 2)
         seek = random.uniform(0, max_seek) if max_seek > 0 else 0
+
+        # Smart crop: always produces correct 9:16 without distortion
+        # For vertical video (already 9:16): just scale and crop to exact size
+        # For horizontal video (16:9): crop center vertically, fill frame
+        # zoom: subtle random zoom 1.0-1.12x for dynamic feel
+        zoom = round(random.uniform(1.0, 1.12), 3)
         vf = (
-            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},setsar=1,fps={FPS}"
+            f"scale='if(gt(iw/ih,9/16),{H}*iw/ih,{W})':'if(gt(iw/ih,9/16),{H},{W}*ih/iw)',"
+            f"crop={W}:{H}:(iw-{W})/2:(ih-{H})/2,"
+            f"zoompan=z='min(zoom+0.0008,{zoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
+            f"setsar=1"
         )
         subprocess.run([
             "ffmpeg", "-y",
@@ -796,7 +803,7 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
             "-vf", vf,
             "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             str(out)
-        ], check=True, capture_output=True, timeout=180)
+        ], check=True, capture_output=True, timeout=300)
         return out
 
     # Fallback: generative background
@@ -830,6 +837,49 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
 
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
+def make_beep(tmp_dir: Path, freq: int = 880, duration_ms: int = 180) -> Path:
+    """Generate a short attention beep using ffmpeg lavfi."""
+    out = tmp_dir / "beep.mp3"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "lavfi",
+        "-i", f"sine=frequency={freq}:duration={duration_ms/1000:.3f}",
+        "-af", "afade=t=out:st=0:d=0.08,volume=0.35",
+        str(out)
+    ], check=True, capture_output=True)
+    return out
+
+
+def inject_beep_after_hook(voiceover: Path, tmp_dir: Path) -> Path:
+    """Insert beep + 0.4s pause after the first sentence (hook)."""
+    beep = make_beep(tmp_dir)
+    silence = tmp_dir / "silence.mp3"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "lavfi",
+        "-i", "anullsrc=r=44100:cl=stereo",
+        "-t", "0.4", str(silence)
+    ], check=True, capture_output=True)
+
+    # Split voiceover: probe duration to find hook end (~first 4-6 seconds)
+    total = ffprobe_duration(voiceover)
+    hook_end = min(6.0, total * 0.18)  # hook is roughly first 18% or 6s
+
+    part1 = tmp_dir / "vo_part1.mp3"
+    part2 = tmp_dir / "vo_part2.mp3"
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover), "-t", f"{hook_end:.2f}", "-c", "copy", str(part1)], check=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover), "-ss", f"{hook_end:.2f}", "-c", "copy", str(part2)], check=True, capture_output=True)
+
+    # Concat: part1 + beep + silence + part2
+    list_file = tmp_dir / "beep_concat.txt"
+    concat_content = "\n".join([f"file '{part1.as_posix()}'", f"file '{beep.as_posix()}'", f"file '{silence.as_posix()}'", f"file '{part2.as_posix()}'",]) + "\n"
+    list_file.write_text(concat_content, encoding="utf-8")
+    out = tmp_dir / "voice_with_beep.mp3"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(list_file), "-c", "copy", str(out)
+    ], check=True, capture_output=True)
+    return out
+
+
 async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     tmp_dir = Path(tempfile.mkdtemp(prefix="storybot_"))
     narration, parts = build_script(topic_name)
@@ -839,6 +889,8 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
 
     # TTS
     await make_voiceover(make_tts_script(parts), voiceover)
+    # Inject beep + pause after hook
+    voiceover = await asyncio.to_thread(inject_beep_after_hook, voiceover, tmp_dir)
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
 
