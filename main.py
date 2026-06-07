@@ -56,29 +56,14 @@ YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 # Layout: "split" = gameplay bottom half + subtitles top half
 #         "overlay" = gameplay fullscreen + subtitles center
-LAYOUT_MODE = os.getenv("LAYOUT_MODE", "split").lower()
+LAYOUT_MODE = os.getenv("LAYOUT_MODE", "overlay").lower()
 
-# Pexels search queries for background video
-PEXELS_QUERIES = [
-    "satisfying cooking close up",
-    "rain window night",
-    "candle flame dark",
-    "ocean waves slow motion",
-    "city lights night",
-    "hands typing dark",
-    "forest fog morning",
-    "fireplace burning",
-    "coffee pouring close up",
-    "driving highway night",
-]
-
-# Local cache dir for downloaded gameplay (persists between generations)
-GAMEPLAY_CACHE_DIR = Path(os.getenv("GAMEPLAY_CACHE_DIR", "/tmp/gameplay_cache"))
+GAMEPLAY_CACHE_DIR = Path(os.getenv("GAMEPLAY_CACHE_DIR", "/data/gameplay"))
 GAMEPLAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 
 W, H = 1080, 1920
 FPS = 30
@@ -724,23 +709,8 @@ def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path,
     BLACK_O = "&H00000000"
     DARK_BG = "&HAA000000"
 
-    # In split mode subtitles sit in the top half (MarginV pushes up from center)
-    # In overlay mode subtitles sit in the center of full screen
-    if layout == "split":
-        # Top half of 1920 = roughly top 960px. Alignment=8 = top-center.
-        # MarginV from top edge
-        sub_align = 8
-        margin_v = 40
-        font_default = 108
-        font_hook = 124
-        font_twist = 128
-    else:
-        sub_align = 5   # center
-        margin_v = 0
-        font_default = 132
-        font_hook = 148
-        font_twist = 152
-
+    # Alignment 5 = center screen, 2 = bottom center, 8 = top center
+    # For drama storytime: center of screen, huge bold yellow, thick black outline
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -750,10 +720,10 @@ def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path,
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,Arial,{font_default},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,9,4,{sub_align},64,64,{margin_v},1\n"
-        f"Style: Hook,Arial,{font_hook},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,{sub_align},58,58,{margin_v},1\n"
-        f"Style: Twist,Arial,{font_twist},{YELLOW},&H000000FF,{BLACK_O},{DARK_BG},1,0,0,0,100,100,0,0,1,11,4,{sub_align},58,58,{margin_v},1\n"
-        f"Style: Label,Arial,52,{YELLOW},&H000000FF,{BLACK_O},&HCC000000,1,0,0,0,100,100,0,0,3,18,0,8,90,90,142,1\n\n"
+        f"Style: Default,Arial,130,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,12,0,5,60,60,0,1\n"
+        f"Style: Hook,Arial,148,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,14,0,5,56,56,0,1\n"
+        f"Style: Twist,Arial,148,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,14,0,5,56,56,0,1\n"
+        f"Style: Label,Arial,56,{YELLOW},&H000000FF,{BLACK_O},&HCC000000,1,0,0,0,100,100,0,0,3,14,0,8,80,80,120,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -785,156 +755,60 @@ def ffprobe_duration(path: Path) -> float:
     return float(proc.stdout.strip())
 
 
-# ── PEXELS VIDEO BACKGROUND ──────────────────────────────────────────────────
+# ── GENERATIVE VIDEO BACKGROUND (ffmpeg lavfi, no downloads) ─────────────────
 
-def search_pexels_videos(query: str, per_page: int = 8) -> list[dict]:
-    logger.info("Pexels search: %s", query)
-    r = get_session().get(
-        "https://api.pexels.com/videos/search",
-        params={"query": query, "per_page": per_page, "orientation": "portrait"},
-        headers={"Authorization": PEXELS_API_KEY},
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json().get("videos", [])
-
-
-def best_video_file(video: dict) -> str | None:
-    files = [f for f in video.get("video_files", []) if f.get("link")]
-    if not files:
-        return None
-    portrait = [f for f in files if (f.get("height") or 0) >= (f.get("width") or 0)]
-    strong = [f for f in portrait if (f.get("height") or 0) >= 1280]
-    candidates = strong or portrait or files
-    candidates.sort(key=lambda f: (f.get("height") or 0), reverse=True)
-    return candidates[0]["link"]
+# Dark cinematic backgrounds — vary each video
+BG_PRESETS = [
+    # Animated dark noise (smoke-like)
+    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*28+4':cb=128:cr=128"),
+    # Dark noise with slight color tint
+    ("lavfi", f"color=c=black:size={W}x{H}:rate={FPS},noise=alls=40:allf=t"),
+    # Mandelbrot fractal dark
+    ("lavfi", f"mandelbrot=size={W}x{H}:rate={FPS}:inner=1"),
+    # Life simulation very dark blue
+    ("lavfi", f"life=size={W}x{H}:rate={FPS}:mold=10:death_color=#000814:life_color=#03071e"),
+    # Dark animated color noise warm
+    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*20+5':cb='random(2)*10+120':cr='random(3)*10+135'"),
+]
 
 
-def get_cached_gameplay_path(key: str) -> Path:
-    safe = re.sub(r"[^a-zA-Z0-9]", "_", key)[:60]
-    return GAMEPLAY_CACHE_DIR / f"{safe}.mp4"
+def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
+    out = tmp_dir / "base.mp4"
 
-
-def download_pexels_clip(url: str, out_path: Path) -> None:
-    logger.info("Downloading Pexels clip: %s", url[:80])
-    with get_session().get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        with out_path.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    f.write(chunk)
-
-
-def get_background_clips(tmp_dir: Path, wanted: int = 6) -> list[Path]:
-    """Fetch background clips from Pexels, use cache when available."""
-    queries = random.sample(PEXELS_QUERIES, min(wanted, len(PEXELS_QUERIES)))
-    clips: list[Path] = []
-    for query in queries:
-        if len(clips) >= wanted:
-            break
-        cached = get_cached_gameplay_path(query)
-        if cached.exists() and cached.stat().st_size > 500_000:
-            logger.info("Cache hit: %s", query)
-            clips.append(cached)
-            continue
-        try:
-            videos = search_pexels_videos(query, per_page=5)
-            if not videos:
-                continue
-            url = best_video_file(random.choice(videos))
-            if not url:
-                continue
-            download_pexels_clip(url, cached)
-            clips.append(cached)
-        except Exception as e:
-            logger.warning("Pexels clip failed for %s: %s", query, e)
-    if not clips:
-        raise RuntimeError("Could not fetch any Pexels clips")
-    return clips
-
-
-def get_gameplay_clip(unused_url: str, tmp_dir: Path, target_seconds: float) -> Path:
-    """Download Pexels clips and concat into one background clip."""
-    clips = get_background_clips(tmp_dir, wanted=6)
-    # concat all clips into one long source, then trim
-    list_file = tmp_dir / "bg_list.txt"
-    list_file.write_text("\n".join(f"file '{c.as_posix()}' " for c in clips) + "\n", encoding="utf-8")
-    concat_out = tmp_dir / "gameplay_raw.mp4"
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
-         "-t", f"{target_seconds + 5:.2f}",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an",
-         str(concat_out)],
-        check=True, capture_output=True, timeout=180,
-    )
-    return concat_out
-
-
-def prepare_gameplay_for_layout(raw_clip: Path, tmp_dir: Path, layout: str, audio_seconds: float) -> Path:
-    """
-    Resize and crop gameplay for the chosen layout.
-    split:   gameplay fills bottom half (1080x960), story/subs in top half (1080x960)
-    overlay: gameplay fills full 1080x1920 with dark overlay
-    """
-    out = tmp_dir / "gameplay_prepared.mp4"
-
-    if layout == "split":
-        # Bottom half: 1080 x 960
-        vf = (
-            f"scale=1080:960:force_original_aspect_ratio=increase,"
-            f"crop=1080:960,"
-            f"setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
-        )
-    else:
-        # Full screen with dark semi-transparent overlay for readability
+    # Use uploaded gameplay files if available
+    uploaded = sorted(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
+    if uploaded:
+        src_file = random.choice(uploaded)
+        logger.info("Using uploaded gameplay: %s", src_file.name)
+        src_duration = ffprobe_duration(src_file)
+        max_seek = max(0, src_duration - audio_seconds - 2)
+        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
         vf = (
             f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},"
-            f"colorlevels=romin=0:gomin=0:bomin=0:romax=0.55:gomax=0.55:bomax=0.55,"
-            f"setpts=PTS/{VIDEO_SPEED},fps={FPS},setsar=1"
+            f"crop={W}:{H},setsar=1,fps={FPS}"
         )
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-ss", f"{seek:.2f}",
+            "-stream_loop", "-1",
+            "-i", str(src_file),
+            "-t", f"{audio_seconds:.2f}",
+            "-vf", vf,
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            str(out)
+        ], check=True, capture_output=True, timeout=180)
+        return out
 
+    # Fallback: generative background
+    fmt, src = random.choice(BG_PRESETS)
+    logger.info("No uploads found, using generative background: %s...", src[:50])
     cmd = [
         "ffmpeg", "-y",
-        "-stream_loop", "-1",
-        "-i", str(raw_clip),
+        "-f", fmt, "-i", src,
         "-t", f"{audio_seconds:.2f}",
-        "-vf", vf,
-        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        str(out),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=180)
-    return out
-
-
-def make_black_top_half(tmp_dir: Path, audio_seconds: float) -> Path:
-    """Create a solid black 1080x960 clip for the top half (text area) in split mode."""
-    out = tmp_dir / "black_top.mp4"
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", f"color=c=black:size=1080x960:rate={FPS}",
-        "-t", f"{audio_seconds:.2f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        str(out),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-    return out
-
-
-def stack_split_layout(top: Path, bottom: Path, tmp_dir: Path, audio_seconds: float) -> Path:
-    """Stack top (black/text area) and bottom (gameplay) into 1080x1920."""
-    out = tmp_dir / "base.mp4"
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(top),
-        "-i", str(bottom),
-        "-filter_complex",
-        f"[0:v][1:v]vstack=inputs=2[v]",
-        "-map", "[v]",
-        "-t", f"{audio_seconds:.2f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        str(out),
+        "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-an", str(out),
     ]
     subprocess.run(cmd, check=True, capture_output=True, timeout=120)
     return out
@@ -971,19 +845,8 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     # Subtitles
     write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
 
-    # Download Pexels background clips
-    raw_clip = await asyncio.to_thread(get_gameplay_clip, "", tmp_dir, audio_seconds + 5)
-
-    if LAYOUT_MODE == "split":
-        gameplay_prepared = await asyncio.to_thread(
-            prepare_gameplay_for_layout, raw_clip, tmp_dir, "split", audio_seconds
-        )
-        black_top = await asyncio.to_thread(make_black_top_half, tmp_dir, audio_seconds)
-        base_video = await asyncio.to_thread(stack_split_layout, black_top, gameplay_prepared, tmp_dir, audio_seconds)
-    else:
-        base_video = await asyncio.to_thread(
-            prepare_gameplay_for_layout, raw_clip, tmp_dir, "overlay", audio_seconds
-        )
+    # Generate cinematic background (no downloads needed)
+    base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds)
 
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
 
@@ -1206,9 +1069,57 @@ async def publish_now(message: Message) -> None:
         await message.answer(f"❌ Ошибка: {e}", reply_markup=keyboard_main())
 
 
+@dp.message(F.video | F.document)
+async def handle_video_upload(message: Message) -> None:
+    """Owner uploads a gameplay video — save to /data/gameplay/ for use as background."""
+    user_id = message.from_user.id
+    if AUTOPILOT_USER_ID and user_id != AUTOPILOT_USER_ID:
+        await message.answer("⛔ Только владелец может загружать видео.")
+        return
+
+    file = message.video or message.document
+    if not file:
+        return
+
+    # Check it's a video
+    mime = getattr(file, "mime_type", "") or ""
+    if message.document and not mime.startswith("video/"):
+        await message.answer("Отправь видео файлом (mp4).")
+        return
+
+    # Count existing files
+    existing = list(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
+    name = f"gameplay_{len(existing) + 1:02d}.mp4"
+    save_path = GAMEPLAY_CACHE_DIR / name
+
+    await message.answer(f"⏳ Сохраняю как {name}...")
+    try:
+        tg_file = await bot.get_file(file.file_id)
+        await bot.download_file(tg_file.file_path, save_path)
+        size_mb = save_path.stat().st_size / 1024 / 1024
+        total = len(list(GAMEPLAY_CACHE_DIR.glob("*.mp4")))
+        msg = f"✅ <b>Сохранено!</b> {name} ({size_mb:.1f} MB)" + "\n" + f"📁 Всего видео в библиотеке: {total}"
+        await message.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+
+
+@dp.message(F.text == "📁 Библиотека")
+async def handle_library(message: Message) -> None:
+    files = list(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
+    if not files:
+        await message.answer("📁 Библиотека пуста. Отправь видео файлом — сохраню как фон.")
+        return
+    lines = ["📁 <b>Видео в библиотеке (" + str(len(files)) + " шт):</b>\n"]
+    for f in sorted(files):
+        mb = f.stat().st_size / 1024 / 1024
+        lines.append(f"• {f.name} — {mb:.1f} MB")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
 @dp.message()
 async def fallback(message: Message) -> None:
-    await message.answer("Нажми кнопку 👇", reply_markup=keyboard_main())
+    await message.answer("Нажми кнопку 👇\n\nОтправь mp4 файлом — сохраню как фон для видео.", reply_markup=keyboard_main())
 
 
 async def main() -> None:
