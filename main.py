@@ -868,13 +868,11 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
         src_needed = audio_seconds * speed
         max_seek = max(0, src_duration - src_needed - 2)
         seek = random.uniform(0, max_seek) if max_seek > 0 else 0
-        # Smart crop: works for both vertical (9:16) and horizontal (16:9) input
-        # setpts speeds up video x2
+        # Smart crop: scale-to-fill then crop center — no black bars ever
         vf = (
             f"setpts=PTS/{speed},"
-            f"scale='if(gt(iw/ih,9/16),{H}*iw/ih,trunc({W}*ih/iw/2)*2)':"
-            f"'if(gt(iw/ih,9/16),trunc({H}*iw/ih/2)*2,{H})',"
-            f"crop={W}:{H},"
+            f"scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,"
             f"fps={FPS},setsar=1"
         )
         subprocess.run([
