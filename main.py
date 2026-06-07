@@ -900,27 +900,46 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
-    """Insert beep + 0.35s pause exactly after hook using filter_complex."""
-    # hook_duration is the real TTS duration of just the hook sentence
-    # Add tiny buffer so beep starts right as hook ends
+    """Insert beep + 0.35s pause exactly after hook."""
     split = max(0.5, hook_duration - 0.05)
+
+    # 1. Split voiceover into part1 (hook) and part2 (rest)
+    p1 = tmp_dir / "vo_p1.aac"
+    p2 = tmp_dir / "vo_p2.aac"
+    sil = tmp_dir / "sil.aac"
+    beep = tmp_dir / "beep.aac"
     out = tmp_dir / "voice_with_beep.mp3"
-    fc = (
-        f"[0:a]atrim=0:{split:.3f},asetpts=PTS-STARTPTS,aresample=44100[p1];"
-        f"[0:a]atrim={split:.3f},asetpts=PTS-STARTPTS,aresample=44100[p2];"
-        f"sine=frequency=900:duration=0.15,afade=t=in:st=0:d=0.02,afade=t=out:st=0.12:d=0.03,"
-        f"volume=0.5,aresample=44100[beep];"
-        f"anullsrc=r=44100:cl=stereo,atrim=0:0.35[sil];"
-        f"[p1][beep][sil][p2]concat=n=4:v=0:a=1[out]"
-    )
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", str(voiceover),
-        "-filter_complex", fc,
-        "-map", "[out]",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-        str(out)
-    ], check=True, capture_output=True)
+
+    # Extract parts
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover),
+                    "-t", f"{split:.3f}", "-ar", "44100", "-ac", "2", str(p1)],
+                   check=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover),
+                    "-ss", f"{split:.3f}", "-ar", "44100", "-ac", "2", str(p2)],
+                   check=True, capture_output=True)
+
+    # Generate beep as separate file
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi",
+                    "-i", "sine=frequency=900:duration=0.15",
+                    "-af", "afade=t=in:st=0:d=0.02,afade=t=out:st=0.12:d=0.03,volume=0.5",
+                    "-ar", "44100", "-ac", "2", str(beep)],
+                   check=True, capture_output=True)
+
+    # Generate silence
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi",
+                    "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", "0.35", "-ar", "44100", "-ac", "2", str(sil)],
+                   check=True, capture_output=True)
+
+    # Concat all 4 parts
+    list_file = tmp_dir / "beep_list.txt"
+    parts_str = "\n".join([f"file '{f.as_posix()}'" for f in [p1, beep, sil, p2]])
+    list_file.write_text(parts_str + "\n", encoding="utf-8")
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", str(list_file),
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    str(out)],
+                   check=True, capture_output=True)
     return out
 
 
