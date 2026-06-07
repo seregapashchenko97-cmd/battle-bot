@@ -514,8 +514,16 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    sentences = [clean_caption_text(part["text"]).rstrip(".!?") for part in parts]
-    return ". ".join(sentences) + "."
+    result = []
+    for i, part in enumerate(parts):
+        text = clean_caption_text(part["text"]).rstrip(".!?")
+        # Use comma between short beats (reduces Edge TTS pause from ~0.4s to ~0.15s)
+        # Keep period only after hook and twist for natural dramatic pause
+        if part["kind"] in ("hook", "twist", "outro"):
+            result.append(text + ".")
+        else:
+            result.append(text + ",")
+    return " ".join(result)
 
 
 def make_hook_script(parts: list[dict]) -> str:
@@ -717,25 +725,39 @@ def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
 
 
 def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
-    weights = [max(3, len(clean_caption_text(part["text"]).split())) for part in parts]
-    usable = max(8, total_seconds - 0.45)
-    cursor = 0.12
+    # Weight: words + punctuation pauses (period ~0.35s, comma ~0.15s)
+    def part_weight(part: dict) -> float:
+        text = clean_caption_text(part["text"])
+        words = len(text.split())
+        # Each sentence has a trailing pause — hook/twist/outro get longer pause
+        pause = 0.35 if part["kind"] in ("hook", "twist", "outro") else 0.15
+        # Approximate: 1 word ≈ 0.22s at normal TTS speed
+        return words * 0.22 + pause
+
+    weights = [max(0.5, part_weight(p)) for p in parts]
+    total_weight = sum(weights)
+    # Scale weights to fit total_seconds
+    scale = (total_seconds - 0.3) / total_weight if total_weight > 0 else 1.0
+    cursor = 0.15
     events: list[dict] = []
     for part, weight in zip(parts, weights):
-        part_duration = usable * weight / sum(weights)
+        part_duration = weight * scale
         chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
-        chunk_duration = max(0.42, part_duration / max(1, len(chunks)))
+        # Each chunk duration proportional to its word count
+        chunk_words = [max(1, len(c.split())) for c in chunks]
+        total_chunk_words = sum(chunk_words)
         part_start = cursor
-        part_end = min(total_seconds - 0.12, cursor + part_duration)
+        part_end = min(total_seconds - 0.1, cursor + part_duration)
         events.append({
             "start": part_start,
-            "end": min(part_end, part_start + 2.7),
+            "end": min(part_end, part_start + 2.5),
             "text": part["label"].upper(),
             "kind": "label",
         })
-        for chunk in chunks:
+        for chunk, cw in zip(chunks, chunk_words):
             start = cursor
-            end = min(total_seconds - 0.1, cursor + chunk_duration)
+            duration = max(0.35, part_duration * cw / total_chunk_words)
+            end = min(total_seconds - 0.1, cursor + duration)
             events.append({"start": start, "end": end, "text": chunk, "kind": part["kind"]})
             cursor = end
     return events
