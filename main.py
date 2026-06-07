@@ -787,21 +787,29 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
         # For vertical video (already 9:16): just scale and crop to exact size
         # For horizontal video (16:9): crop center vertically, fill frame
         # zoom: subtle random zoom 1.0-1.12x for dynamic feel
-        zoom = round(random.uniform(1.0, 1.12), 3)
+        # Speed x2: need to seek more source footage
+        speed = 2.0
+        src_needed = audio_seconds * speed
+        max_seek = max(0, src_duration - src_needed - 2)
+        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
+        # Smart crop: works for both vertical (9:16) and horizontal (16:9) input
+        # setpts speeds up video x2
         vf = (
-            f"scale='if(gt(iw/ih,9/16),{H}*iw/ih,{W})':'if(gt(iw/ih,9/16),{H},{W}*ih/iw)',"
-            f"crop={W}:{H}:(iw-{W})/2:(ih-{H})/2,"
-            f"zoompan=z='min(zoom+0.0008,{zoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
-            f"setsar=1"
+            f"setpts=PTS/{speed},"
+            f"scale='if(gt(iw/ih,9/16),{H}*iw/ih,trunc({W}*ih/iw/2)*2)':"
+            f"'if(gt(iw/ih,9/16),trunc({H}*iw/ih/2)*2,{H})',"
+            f"crop={W}:{H},"
+            f"fps={FPS},setsar=1"
         )
         subprocess.run([
             "ffmpeg", "-y",
             "-ss", f"{seek:.2f}",
             "-stream_loop", "-1",
             "-i", str(src_file),
-            "-t", f"{audio_seconds:.2f}",
+            "-t", f"{src_needed + 5:.2f}",
             "-vf", vf,
-            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-t", f"{audio_seconds:.2f}",
+            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             str(out)
         ], check=True, capture_output=True, timeout=300)
         return out
@@ -826,56 +834,40 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(base_video), "-i", str(voiceover),
          "-t", f"{duration:.2f}",
-         "-vf", f"subtitles='{sub_path}',scale=720:1280",
+         "-vf", f"subtitles='{sub_path}',scale=1080:1920",
          "-map", "0:v", "-map", "1:a",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-         "-maxrate", "2M", "-bufsize", "4M",
-         "-c:a", "aac", "-b:a", "128k", "-shortest", str(out_path)],
+         "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+         "-maxrate", "8M", "-bufsize", "16M",
+         "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_path)],
         check=True, capture_output=True,
     )
 
 
 # ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
 
-def make_beep(tmp_dir: Path, freq: int = 880, duration_ms: int = 180) -> Path:
-    """Generate a short attention beep using ffmpeg lavfi."""
-    out = tmp_dir / "beep.mp3"
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "lavfi",
-        "-i", f"sine=frequency={freq}:duration={duration_ms/1000:.3f}",
-        "-af", "afade=t=out:st=0:d=0.08,volume=0.35",
-        str(out)
-    ], check=True, capture_output=True)
-    return out
-
-
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path) -> Path:
-    """Insert beep + 0.4s pause after the first sentence (hook)."""
-    beep = make_beep(tmp_dir)
-    silence = tmp_dir / "silence.mp3"
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "lavfi",
-        "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", "0.4", str(silence)
-    ], check=True, capture_output=True)
-
-    # Split voiceover: probe duration to find hook end (~first 4-6 seconds)
+    """Insert beep + 0.4s pause after the hook using filter_complex."""
     total = ffprobe_duration(voiceover)
-    hook_end = min(6.0, total * 0.18)  # hook is roughly first 18% or 6s
-
-    part1 = tmp_dir / "vo_part1.mp3"
-    part2 = tmp_dir / "vo_part2.mp3"
-    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover), "-t", f"{hook_end:.2f}", "-c", "copy", str(part1)], check=True, capture_output=True)
-    subprocess.run(["ffmpeg", "-y", "-i", str(voiceover), "-ss", f"{hook_end:.2f}", "-c", "copy", str(part2)], check=True, capture_output=True)
-
-    # Concat: part1 + beep + silence + part2
-    list_file = tmp_dir / "beep_concat.txt"
-    concat_content = "\n".join([f"file '{part1.as_posix()}'", f"file '{beep.as_posix()}'", f"file '{silence.as_posix()}'", f"file '{part2.as_posix()}'",]) + "\n"
-    list_file.write_text(concat_content, encoding="utf-8")
+    hook_end = min(6.0, total * 0.18)
     out = tmp_dir / "voice_with_beep.mp3"
+    # Build audio entirely with filter_complex:
+    # [0] = voiceover, split at hook_end
+    # beep = sine wave generated inline
+    # layout: part1 + beep(0.18s) + silence(0.4s) + part2
+    fc = (
+        f"[0:a]atrim=0:{hook_end:.3f},asetpts=PTS-STARTPTS[p1];"
+        f"[0:a]atrim={hook_end:.3f},asetpts=PTS-STARTPTS[p2];"
+        f"sine=frequency=880:duration=0.18,afade=t=out:st=0.10:d=0.08,volume=0.4[beep];"
+        f"anullsrc=r=44100:cl=stereo,atrim=0:0.4[sil];"
+        f"[p1][beep][sil][p2]concat=n=4:v=0:a=1[out]"
+    )
     subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(list_file), "-c", "copy", str(out)
+        "ffmpeg", "-y",
+        "-i", str(voiceover),
+        "-filter_complex", fc,
+        "-map", "[out]",
+        "-c:a", "libmp3lame", "-q:a", "2",
+        str(out)
     ], check=True, capture_output=True)
     return out
 
