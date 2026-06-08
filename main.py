@@ -516,16 +516,22 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    result = []
-    for i, part in enumerate(parts):
-        text = clean_caption_text(part["text"]).rstrip(".!?")
-        # Use comma between short beats (reduces Edge TTS pause from ~0.4s to ~0.15s)
-        # Keep period only after hook and twist for natural dramatic pause
-        if part["kind"] in ("hook", "twist", "outro"):
-            result.append(text + ".")
-        else:
-            result.append(text + ",")
-    return " ".join(result)
+    """Build TTS as flowing prose. Beats joined with commas = no robotic pauses."""
+    hook = [p for p in parts if p["kind"] == "hook"]
+    story = [p for p in parts if p["kind"] == "story"]
+    twist = [p for p in parts if p["kind"] == "twist"]
+    outro = [p for p in parts if p["kind"] == "outro"]
+    segments = []
+    for p in hook:
+        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
+    if story:
+        beats = [clean_caption_text(p["text"]).rstrip(".!?,") for p in story]
+        segments.append(", ".join(beats) + ".")
+    for p in twist:
+        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
+    for p in outro:
+        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
+    return " ".join(segments)
 
 
 def make_hook_script(parts: list[dict]) -> str:
@@ -556,42 +562,21 @@ def extend_story_parts(parts: list[dict], topic_label: str) -> None:
         used.add(line)
 
 
-def generate_story_with_groq() -> dict | None:
+RECENT_LABELS: list[str] = []
+
+
+def generate_story_with_groq(avoid_labels: list[str] | None = None) -> dict | None:
     """Generate a fresh confession story using Groq API (free)."""
     if not GROQ_API_KEY:
         return None
-    prompt = """You write viral confession stories for YouTube Shorts drama channels. These videos get 40-60% retention because the hook stops the scroll instantly.
-
-HOOK RULES (most important):
-- Must name a specific object, number, or place: "My husband's second phone had 847 messages." NOT "My husband was hiding something."
-- Must create immediate dread or curiosity in under 12 words
-- Best hooks start with: My, I, She, He, The, or a number
-- Examples of GREAT hooks:
-  "My wife asked me to fix her laptop. I found 3 hotel receipts."
-  "I found a pregnancy test in my house. My wife had a hysterectomy."
-  "My boss fired me by text. I still had the admin password."
-  "My dad left everything to a woman none of us knew."
-
-BEATS RULES:
-- Each beat = 1 short sentence, max 7 words
-- Each beat reveals exactly ONE new detail
-- Beats must escalate — each one worse than the last
-- No filler sentences like "I was shocked" or "I couldn't believe it"
-
-TWIST RULES:
-- Must reframe the entire story in one sentence
-- Something the viewer did NOT see coming
-- Start with: "Turns out", "That was when", "What I didn't know", or "She had already"
-
-Return ONLY this JSON, no markdown, no explanation:
-{
-  "label": "2-3 word category",
-  "hook": "hook sentence under 12 words with specific detail",
-  "beats": ["9 beats", "each one sentence", "max 7 words each", "escalating tension", "specific details only", "no filler", "each reveals one fact", "building to twist", "last beat sets up twist"],
-  "twist": "one sentence revelation that reframes everything",
-  "closer": "one sentence consequence or action taken"
-}"""
-
+    avoid_str2 = ", ".join(avoid_labels[-5:]) if avoid_labels else "none"
+    prompt = ("You write viral confession stories for YouTube Shorts. "
+        "HOOK: specific object/number/place, under 12 words, creates dread. "
+        "BEATS: 9 short sentences, max 7 words each, escalating, no filler. "
+        "TWIST: reframes story, starts with Turns out or That was when. "
+        f"Do NOT repeat these topics: {avoid_str2}. Use different scenario. "
+        "Return ONLY JSON: {\"label\":\"2-3 words\",\"hook\":\"under 12 words\","
+        "\"beats\":[\"9 beats\"],\"twist\":\"one sentence\",\"closer\":\"one sentence\"}")
     try:
         r = get_session().post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -608,7 +593,6 @@ Return ONLY this JSON, no markdown, no explanation:
         r.raise_for_status()
         data = r.json()
         story = __import__("json").loads(data["choices"][0]["message"]["content"])
-        # Validate required keys
         required = {"label", "hook", "beats", "twist", "closer"}
         if not required.issubset(story.keys()):
             return None
@@ -622,15 +606,17 @@ Return ONLY this JSON, no markdown, no explanation:
 
 
 def build_script(topic_name: str) -> tuple[str, list[dict]]:
-    # Try Groq first for fresh AI-generated story
-    confession = generate_story_with_groq() or choose_fresh_confession()
+    global RECENT_LABELS
+    confession = generate_story_with_groq(avoid_labels=RECENT_LABELS) or choose_fresh_confession()
+    RECENT_LABELS.append(confession.get("label", ""))
+    RECENT_LABELS = RECENT_LABELS[-5:]
     topic_label = confession["label"]
     parts = [{"kind": "hook", "label": topic_label, "text": confession["hook"]}]
     for beat in confession["beats"]:
         parts.append({"kind": "story", "label": topic_label, "text": beat})
     parts.append({"kind": "twist", "label": "wait for it", "text": confession["twist"]})
     parts.append({"kind": "outro", "label": "comment", "text": confession["closer"]})
-    parts.append({"kind": "outro", "label": "comment", "text": "What would you do in this situation?"})
+    parts.append({"kind": "outro", "label": "comment", "text": "What would you do? Comment below and subscribe for more."})
     extend_story_parts(parts, topic_label)
     narration = "\n".join(part["text"] for part in parts)
     return narration, parts
