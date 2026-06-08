@@ -50,6 +50,8 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Whisper via Groq API (free, fast) for accurate subtitle timing
+USE_WHISPER = os.getenv("USE_WHISPER", "true").lower() == "true"
 
 YOUTUBE_UPLOAD_ENABLED = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").lower() == "true"
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
@@ -558,16 +560,37 @@ def generate_story_with_groq() -> dict | None:
     """Generate a fresh confession story using Groq API (free)."""
     if not GROQ_API_KEY:
         return None
-    prompt = """Generate a viral drama confession story for a YouTube Shorts channel.
-Return ONLY a JSON object with these exact keys:
+    prompt = """You write viral confession stories for YouTube Shorts drama channels. These videos get 40-60% retention because the hook stops the scroll instantly.
+
+HOOK RULES (most important):
+- Must name a specific object, number, or place: "My husband's second phone had 847 messages." NOT "My husband was hiding something."
+- Must create immediate dread or curiosity in under 12 words
+- Best hooks start with: My, I, She, He, The, or a number
+- Examples of GREAT hooks:
+  "My wife asked me to fix her laptop. I found 3 hotel receipts."
+  "I found a pregnancy test in my house. My wife had a hysterectomy."
+  "My boss fired me by text. I still had the admin password."
+  "My dad left everything to a woman none of us knew."
+
+BEATS RULES:
+- Each beat = 1 short sentence, max 7 words
+- Each beat reveals exactly ONE new detail
+- Beats must escalate — each one worse than the last
+- No filler sentences like "I was shocked" or "I couldn't believe it"
+
+TWIST RULES:
+- Must reframe the entire story in one sentence
+- Something the viewer did NOT see coming
+- Start with: "Turns out", "That was when", "What I didn't know", or "She had already"
+
+Return ONLY this JSON, no markdown, no explanation:
 {
-  "label": "2-3 word category like cheating wife or work revenge",
-  "hook": "One shocking sentence that makes people stop scrolling. Under 15 words. Must be a real situation, specific detail.",
-  "beats": ["9 short sentences", "each revealing one detail", "building tension", "short like 5-8 words each"],
-  "twist": "One sentence shocking revelation that reframes everything. Start with: When I, Then I, or That was when.",
-  "closer": "One sentence satisfying ending or consequence."
-}
-Rules: Real-feeling, specific details. No fantasy. Drama niches: cheating, betrayal, revenge, family secrets, work drama, inheritance. Hook must be specific not generic."""
+  "label": "2-3 word category",
+  "hook": "hook sentence under 12 words with specific detail",
+  "beats": ["9 beats", "each one sentence", "max 7 words each", "escalating tension", "specific details only", "no filler", "each reveals one fact", "building to twist", "last beat sets up twist"],
+  "twist": "one sentence revelation that reframes everything",
+  "closer": "one sentence consequence or action taken"
+}"""
 
     try:
         r = get_session().post(
@@ -576,7 +599,7 @@ Rules: Real-feeling, specific details. No fantasy. Drama niches: cheating, betra
             json={
                 "model": GROQ_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.95,
+                "temperature": 1.0,
                 "max_tokens": 800,
                 "response_format": {"type": "json_object"},
             },
@@ -705,6 +728,104 @@ def ensure_min_audio_duration(audio_path: Path, tmp_dir: Path) -> None:
 
 
 # ── СУБТИТРЫ — ЖЁЛТЫЕ ────────────────────────────────────────────────────────
+
+def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
+    """Transcribe audio using Groq Whisper API. Returns word-level timestamps."""
+    if not GROQ_API_KEY:
+        return None
+    try:
+        import json as _json
+        with open(audio_path, "rb") as f:
+            audio_data = f.read()
+        # Groq Whisper API
+        import urllib.request, urllib.parse
+        boundary = "----FormBoundary7MA4YWxkTrZu0gW"
+        nl = "\r\n"
+        body = (
+            ("--" + boundary + nl).encode()
+            + ('Content-Disposition: form-data; name="file"; filename="audio.mp3"' + nl).encode()
+            + ("Content-Type: audio/mpeg" + nl + nl).encode()
+            + audio_data
+            + (nl + "--" + boundary + nl).encode()
+            + ('Content-Disposition: form-data; name="model"' + nl + nl).encode()
+            + ("whisper-large-v3-turbo" + nl).encode()
+            + ("--" + boundary + nl).encode()
+            + ('Content-Disposition: form-data; name="response_format"' + nl + nl).encode()
+            + ("verbose_json" + nl).encode()
+            + ("--" + boundary + nl).encode()
+            + ('Content-Disposition: form-data; name="timestamp_granularities[]"' + nl + nl).encode()
+            + ("word" + nl).encode()
+            + ("--" + boundary + "--" + nl).encode()
+        )
+
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            result = _json.loads(r.read())
+
+        words = result.get("words", [])
+        if not words:
+            return None
+        logger.info("Whisper transcribed %d words", len(words))
+        return words
+    except Exception as e:
+        logger.warning("Whisper failed: %s", e)
+        return None
+
+
+def write_ass_from_whisper(words: list[dict], audio_seconds: float, out_path: Path) -> None:
+    """Generate ASS subtitles from Whisper word timestamps."""
+    YELLOW = "&H0000FFFF"
+    BLACK_O = "&H00000000"
+    header = (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        f"PlayResX: {W}\n"
+        f"PlayResY: {H}\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Default,Arial,130,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,12,0,5,60,60,0,1\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+    lines = [header]
+    chunk = []
+    chunk_start = None
+
+    def flush_chunk(end_time):
+        if not chunk:
+            return
+        text = ass_escape(" ".join(w["word"].strip() for w in chunk))
+        lines.append(
+            f"Dialogue: 0,{ass_time(chunk_start)},{ass_time(min(end_time, audio_seconds - 0.05))},Default,,0,0,0,,{text}\n"
+        )
+
+    for word in words:
+        w_start = float(word.get("start", 0))
+        w_end = float(word.get("end", w_start + 0.3))
+        if chunk_start is None:
+            chunk_start = w_start
+        chunk.append(word)
+        if len(chunk) >= SUBTITLE_WORDS:
+            flush_chunk(w_end)
+            chunk = []
+            chunk_start = None
+
+    if chunk:
+        last_end = float(words[-1].get("end", audio_seconds))
+        flush_chunk(last_end)
+
+    out_path.write_text("".join(lines), encoding="utf-8")
+
+
 
 def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
     words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
@@ -949,8 +1070,15 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
 
-    # Subtitles
-    write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
+    # Subtitles — use Whisper for accurate word-level timing if available
+    if USE_WHISPER and GROQ_API_KEY:
+        whisper_words = await asyncio.to_thread(transcribe_with_whisper, voiceover)
+        if whisper_words:
+            await asyncio.to_thread(write_ass_from_whisper, whisper_words, audio_seconds, subtitles)
+        else:
+            write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
+    else:
+        write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
 
     # Generate cinematic background (no downloads needed)
     base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds)
