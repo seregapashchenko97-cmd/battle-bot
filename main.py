@@ -1012,10 +1012,19 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
 
 def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path, out_path: Path, duration: float) -> None:
     sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
+    # drawtext: "Follow for more" at bottom for first 3 seconds
+    vf = (
+        f"subtitles='{sub_path}',"
+        "drawtext=text='Follow for more':"
+        "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        "fontsize=52:fontcolor=white:borderw=4:bordercolor=black:"
+        "x=(w-text_w)/2:y=h-160:enable='lt(t,3)',"
+        "scale=1080:1920"
+    )
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(base_video), "-i", str(voiceover),
          "-t", f"{duration:.2f}",
-         "-vf", f"subtitles='{sub_path}',scale=1080:1920",
+         "-vf", vf,
          "-map", "0:v", "-map", "1:a",
          "-c:v", "libx264", "-preset", "fast", "-crf", "20",
          "-maxrate", "8M", "-bufsize", "16M",
