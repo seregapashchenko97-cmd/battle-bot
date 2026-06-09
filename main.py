@@ -515,21 +515,50 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    hook = [p for p in parts if p["kind"] == "hook"]
+    """
+    Build one continuous flowing paragraph — no line breaks, no short fragments.
+    Short beats (under 5 words) are joined with commas so TTS reads them smoothly.
+    Longer sentences get a period. Result: natural human narration pace.
+    """
+    hook  = [p for p in parts if p["kind"] == "hook"]
     story = [p for p in parts if p["kind"] == "story"]
     twist = [p for p in parts if p["kind"] == "twist"]
     outro = [p for p in parts if p["kind"] == "outro"]
-    segments = []
+
+    tokens: list[str] = []
+
+    # Hook — always a full sentence
     for p in hook:
-        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
+        tokens.append(clean_caption_text(p["text"]).rstrip(".!?,") + ".")
+
+    # Story beats — group short fragments together with commas
     if story:
-        beats = [clean_caption_text(p["text"]).rstrip(".!?,") for p in story]
-        segments.append(", ".join(beats) + ".")
+        buffer: list[str] = []
+        for p in story:
+            beat = clean_caption_text(p["text"]).rstrip(".!?,")
+            word_count = len(beat.split())
+            if word_count < 6:
+                # Short fragment — accumulate with comma
+                buffer.append(beat)
+            else:
+                # Long enough — flush buffer first, then add as own sentence
+                if buffer:
+                    tokens.append(", ".join(buffer) + ".")
+                    buffer = []
+                tokens.append(beat + ".")
+        if buffer:
+            tokens.append(", ".join(buffer) + ".")
+
+    # Twist — full sentence
     for p in twist:
-        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
+        tokens.append(clean_caption_text(p["text"]).rstrip(".!?,") + ".")
+
+    # Outro — full sentence
     for p in outro:
-        segments.append(clean_caption_text(p["text"]).rstrip(".!?") + ".")
-    return " ".join(segments)
+        tokens.append(clean_caption_text(p["text"]).rstrip(".!?,") + ".")
+
+    # Join everything with a single space — one continuous paragraph
+    return " ".join(tokens)
 
 
 def make_hook_script(parts: list[dict]) -> str:
@@ -574,9 +603,11 @@ def generate_story_with_groq(avoid_labels: list[str] | None = None) -> dict | No
         "NO crime, NO violence, NO horror, NO dark themes. "
         "HOOK rule: must name one SPECIFIC detail (a text message, a receipt, a name, a time, a number). "
         "Hook must make the reader think 'wait, what?' in under 12 words. "
-        "BEATS: 9 sentences, max 8 words each, building tension naturally. "
+        "BEATS: exactly 9 sentences. Each beat MUST be a complete sentence with subject and verb, 6-12 words each. "
+        "NEVER write fragments like 'Job on line' or 'Boss angry' — write full sentences like 'My job was suddenly on the line.' "
+        "Beats escalate tension naturally, each one revealing new information. "
         "TWIST: one sentence that reframes everything. Start with 'Turns out' or 'That was when'. "
-        "CLOSER: one sentence — outcome or quiet revenge or lesson. "
+        "CLOSER: one sentence — outcome, quiet win, or lesson learned. "
         f"Do NOT repeat these topics: {avoid_str}. "
         "Return ONLY JSON: "
         '{\"label\":\"2-3 words\",\"hook\":\"under 12 words\",'
