@@ -50,8 +50,9 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-# Whisper via Groq API (free, fast) for accurate subtitle timing
 USE_WHISPER = os.getenv("USE_WHISPER", "true").lower() == "true"
+
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 YOUTUBE_UPLOAD_ENABLED = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").lower() == "true"
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
@@ -61,14 +62,10 @@ YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")
 
-
-# Layout: "split" = gameplay bottom half + subtitles top half
-#         "overlay" = gameplay fullscreen + subtitles center
 LAYOUT_MODE = os.getenv("LAYOUT_MODE", "overlay").lower()
 
 GAMEPLAY_CACHE_DIR = Path(os.getenv("GAMEPLAY_CACHE_DIR", "/data/gameplay"))
 GAMEPLAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
 
 W, H = 1080, 1920
 FPS = 30
@@ -85,348 +82,350 @@ last_generated: dict[int, dict] = {}
 autopilot_fired: dict[str, set[int]] = {}
 
 
-# ── VIRAL STORIES ─────────────────────────────────────────────────────────────
+# ── LIFE DRAMA STORIES ────────────────────────────────────────────────────────
+# Real, relatable, everyday situations. Strong hook = specific detail that
+# instantly makes you think "wait, what?" — no gore, no crime, no horror.
 
 STRONG_CONFESSIONS = [
     {
-        "label": "cheating wife",
-        "hook": "My wife asked me to fix her laptop. The browser history destroyed our marriage.",
+        "label": "boss at party",
+        "hook": "My boss texted me at 1am after the office party. My husband saw it first.",
         "beats": [
-            "She said it was running slow.",
-            "I opened the browser.",
-            "The first tab was a hotel booking confirmation.",
-            "The second tab was a text conversation screenshot saved as a photo.",
-            "I recognized the name immediately.",
-            "It was my best friend.",
-            "I checked the date on the hotel receipt.",
-            "It was our anniversary weekend.",
-            "She had told me she was visiting her sick mother.",
+            "We had been at the same table all evening.",
+            "He kept refilling my glass.",
+            "I thought nothing of it.",
+            "The text said he had a great time talking to me.",
+            "It said he wanted to continue the conversation privately.",
+            "My husband handed me the phone without a word.",
+            "I read it three times.",
+            "Then I looked at my husband's face.",
+            "He asked me one question.",
         ],
-        "twist": "When I confronted her, she said at least he made her feel something.",
-        "closer": "I closed the laptop, called a lawyer, and never mentioned the hotel.",
+        "twist": "He asked if this was the first time. And I realized I had no idea how to answer.",
+        "closer": "I reported it to HR Monday morning. My boss resigned by Friday.",
     },
     {
-        "label": "cheating husband",
-        "hook": "I found a receipt for a diamond necklace my husband never gave me.",
+        "label": "mother in law secret",
+        "hook": "My mother-in-law called me the wrong name for two years. I just found out it was intentional.",
         "beats": [
-            "It fell out of his coat pocket.",
-            "Same store I always hinted about.",
-            "Same style I saved on my phone.",
-            "I waited three months.",
-            "No necklace ever appeared.",
-            "Then his coworker posted a photo at their office Christmas party.",
-            "She was wearing it.",
-            "My husband was standing right next to her.",
-            "His hand was on her back.",
+            "She called me Sarah.",
+            "My name is not Sarah.",
+            "My husband corrected her every time.",
+            "She always said she forgot.",
+            "Then her sister visited.",
+            "She introduced me correctly without hesitating.",
+            "Her sister looked confused.",
+            "She said, you know her name?",
+            "The silence lasted about four seconds.",
         ],
-        "twist": "He had already told her I knew nothing and we were basically separated.",
-        "closer": "I wore the receipt to the next office party. Around my neck. Framed.",
+        "twist": "Sarah was the name of the woman she wanted her son to marry instead of me.",
+        "closer": "My husband finally understood why I had been uncomfortable for two years.",
     },
     {
-        "label": "best friend betrayal",
-        "hook": "My best friend gave a speech at my wedding. I found out two years later what he left out.",
+        "label": "coworker steals idea",
+        "hook": "My coworker sent my exact report to management with her name on it. I had the timestamps.",
         "beats": [
-            "Everyone cried.",
-            "He talked about loyalty and love.",
-            "He hugged me at the altar.",
-            "Two years later my wife filed for divorce.",
-            "I asked her why.",
-            "She handed me her phone.",
-            "There were 847 messages between them.",
-            "Starting the week before our wedding.",
-            "The last message was from the morning of.",
+            "I worked on it for three weeks.",
+            "She asked to review it as a favor.",
+            "I trusted her.",
+            "The next morning she forwarded it to our director.",
+            "Subject line said, my proposal for Q3.",
+            "I opened the attachment.",
+            "Every word was mine.",
+            "Same structure.",
+            "Same data I had pulled.",
         ],
-        "twist": "He wrote, after today you belong to someone else, but not really.",
-        "closer": "The speech is still on YouTube. I report it every year on our anniversary.",
+        "twist": "I forwarded the original draft with timestamps to the director and CC'd HR.",
+        "closer": "She got a written warning. I got the project lead role.",
     },
     {
-        "label": "work affair",
-        "hook": "My husband said his coworker was just a friend. Then I got her accidentally sent text.",
+        "label": "forgot anniversary",
+        "hook": "My husband forgot our anniversary. What he did to cover it up was worse than forgetting.",
         "beats": [
-            "It came to my number at 11pm.",
-            "It said, I can still smell your shirt.",
-            "She realized immediately and sent three question marks.",
-            "I replied, wrong number.",
-            "Then I forwarded it to my husband.",
-            "He called me in four seconds.",
-            "He said it was completely innocent.",
-            "I asked what shirt.",
-            "He went silent for eleven seconds.",
+            "He came home with flowers.",
+            "I was happy at first.",
+            "Then I noticed the gas station sticker on the wrapper.",
+            "He had bought them ten minutes ago.",
+            "I asked what day it was.",
+            "He said Tuesday.",
+            "I told him our anniversary was Tuesday.",
+            "He said he absolutely knew that.",
+            "Then his phone buzzed and I saw the reminder he had just set.",
         ],
-        "twist": "She had been to our house for dinner six times.",
-        "closer": "Now I understand why she always complimented my cooking so hard.",
+        "twist": "The reminder said, find out what you did wrong.",
+        "closer": "We laughed about it eventually. But not that night.",
     },
     {
-        "label": "secret apartment",
-        "hook": "My husband of eight years had a second apartment. My sister helped him pay for it.",
+        "label": "friend copies life",
+        "hook": "My best friend applied for the same job, the same apartment, and the same man I told her about.",
         "beats": [
-            "I found the lease inside a folder labeled car insurance.",
-            "Different address.",
-            "Same city.",
-            "I drove there at 7am on a Tuesday.",
-            "His car was in the lot.",
-            "I sat outside for two hours.",
-            "A woman came out in his college sweatshirt.",
-            "I recognized it.",
-            "I gave him that sweatshirt for his birthday seven years ago.",
+            "I told her about the job opening on Monday.",
+            "She applied Tuesday.",
+            "I told her about the apartment on Wednesday.",
+            "She toured it Thursday.",
+            "I told her about the guy I liked on Friday.",
+            "She texted him that weekend.",
+            "She used details I had told her about him.",
+            "He mentioned she seemed to already know a lot about him.",
+            "He sent me the screenshots.",
         ],
-        "twist": "My sister had been transferring him money every month labeled as a loan.",
-        "closer": "He never paid it back. Neither did she, when I asked for an explanation.",
+        "twist": "She told him I was unstable and had made up a connection between us.",
+        "closer": "He believed me. She lost both the friendship and the guy.",
     },
     {
-        "label": "family secret",
-        "hook": "My dad died and left everything to a woman none of us had ever heard of.",
+        "label": "bad reference",
+        "hook": "I found out my old manager had been giving me a terrible reference for three years.",
         "beats": [
-            "Her name was in the will twice.",
-            "My mom thought it was a mistake.",
-            "The lawyer said it was not.",
-            "My brother drove to her address.",
-            "A teenage boy answered the door.",
-            "He had my dad's eyes.",
-            "Same jawline.",
-            "Same way of standing with one hand in his pocket.",
-            "He asked if we were there about the money.",
+            "I could not understand why I kept not getting jobs.",
+            "I had good interviews.",
+            "Strong experience.",
+            "A recruiter finally told me off the record.",
+            "She said my reference had flagged concerns about reliability.",
+            "I had never missed a deadline in five years.",
+            "I called the reference line myself using a different name.",
+            "He picked up.",
+            "He said I had left the company under difficult circumstances.",
         ],
-        "twist": "Dad had been paying for his school, his clothes, and his birthday every year since birth.",
-        "closer": "My mom said she always knew something was missing. Now she knows what it was.",
+        "twist": "I had left because he had taken credit for my work and I had reported it.",
+        "closer": "I sent a legal letter. He agreed in writing to give neutral references only.",
     },
     {
-        "label": "inheritance trap",
-        "hook": "My grandmother left me one sentence in her will. My aunts laughed until the lawyer kept reading.",
+        "label": "wedding speech",
+        "hook": "My maid of honor used my wedding speech to confess she was in love with my husband.",
         "beats": [
-            "The sentence said, for the only one who visited.",
-            "My aunts looked confused.",
-            "The lawyer flipped to the next page.",
-            "It listed a storage unit address.",
-            "And a safety deposit box number.",
-            "And a property I had never heard of.",
-            "My aunts had been managing her finances for years.",
-            "They thought they knew every account.",
-            "Grandma opened a separate one in 1987 that nobody touched.",
+            "She started normally.",
+            "She talked about how long we had been friends.",
+            "Then the tone changed.",
+            "She said she had always admired him.",
+            "That she used to imagine what it would be like.",
+            "The room went completely quiet.",
+            "My husband stopped smiling.",
+            "My mother put down her glass.",
+            "She finished by wishing us happiness.",
         ],
-        "twist": "The storage unit had forty years of rental income she never spent.",
-        "closer": "She told me once that greedy people always look at the table, not the person sitting at it.",
+        "twist": "She later said it was meant as a compliment to my taste.",
+        "closer": "She was not invited to the reception dinner.",
     },
     {
-        "label": "stolen identity",
-        "hook": "My brother used my identity to buy a house. I found out when the bank called about missed payments.",
+        "label": "salary discovery",
+        "hook": "I found out the man hired after me with less experience makes thirty percent more.",
         "beats": [
-            "I thought it was a scam call.",
-            "Then they sent documents to my address.",
-            "My signature was on every page.",
-            "I had never signed anything.",
-            "My brother had our mother's notary stamp.",
-            "She worked at a law firm for twenty years.",
-            "I called her first.",
-            "She already knew.",
-            "She said he needed the help and I would have said no.",
+            "He mentioned it casually at lunch.",
+            "He thought I already knew.",
+            "I did not react.",
+            "I went back to my desk.",
+            "I pulled up my contract.",
+            "I pulled up the job posting.",
+            "Same title.",
+            "Same responsibilities.",
+            "I had three more years of experience.",
         ],
-        "twist": "The house was in my name. The debt was in my name. The tenants were paying him.",
-        "closer": "I pressed charges against both of them. My mother has not spoken to me since.",
+        "twist": "When I asked HR, they said my salary reflected what I had negotiated at the start.",
+        "closer": "I negotiated again. I got a twenty-two percent raise in one conversation.",
     },
     {
-        "label": "mother in law",
-        "hook": "My mother-in-law told me I was too good for her son the day before our wedding.",
+        "label": "parking spot revenge",
+        "hook": "My neighbor stole my parking spot for six months. I solved it in one afternoon.",
         "beats": [
-            "I thought it was a compliment.",
-            "Then she handed me a folder.",
-            "Bank statements going back three years.",
-            "His accounts.",
-            "Transfers to a woman I did not recognize.",
-            "Every month.",
-            "Same amount.",
-            "She said she had tried to tell him to stop.",
-            "He told her it was none of her business.",
+            "I asked him politely twice.",
+            "He said he did not realize it was assigned.",
+            "He kept doing it.",
+            "I documented it for two weeks.",
+            "Dates, times, photos.",
+            "I sent it to the building manager.",
+            "The manager did nothing.",
+            "So I sent it to the landlord directly.",
+            "With a copy of my lease highlighting the assigned parking clause.",
         ],
-        "twist": "The woman was not a girlfriend. She was his first wife. They were never divorced.",
-        "closer": "My mother-in-law drove me to the courthouse herself the next morning.",
+        "twist": "It turned out he had been subletting his apartment illegally and the parking complaint triggered an inspection.",
+        "closer": "He moved out within a month. I have used my spot every day since.",
     },
     {
-        "label": "perfect revenge",
-        "hook": "My boss fired me by text while I was in the hospital with my newborn.",
+        "label": "group chat mistake",
+        "hook": "My coworker meant to complain about me in a private chat. She sent it to the whole team.",
         "beats": [
-            "The message said, we are restructuring, today is your last day.",
-            "No call.",
-            "No warning.",
-            "My wife had just given birth four hours earlier.",
-            "I had worked there eleven years.",
-            "I had trained his current assistant.",
-            "I had built the client database from scratch.",
-            "I had the admin password to the entire system.",
-            "He forgot that when he sent the text.",
+            "I was in a meeting.",
+            "My phone buzzed.",
+            "Then again.",
+            "Then several times.",
+            "I checked it after.",
+            "There was a message from her describing me as difficult.",
+            "And attention-seeking.",
+            "And saying the team would be better without me.",
+            "Then a message that just said, wrong chat.",
         ],
-        "twist": "I exported every client contact and sent them a personal farewell email before midnight.",
-        "closer": "Six clients followed me. He called to negotiate a week later. I let it go to voicemail.",
+        "twist": "Seven people had already read it. Two of them replied to the group defending me.",
+        "closer": "She apologized in person. I accepted it. We have not had lunch together since.",
     },
     {
-        "label": "credit theft",
-        "hook": "My manager presented my project to the board and never mentioned my name once.",
+        "label": "gym instructor",
+        "hook": "My gym instructor told every new client I was proof that effort does not always work.",
         "beats": [
-            "I watched through the glass door.",
-            "Every slide was mine.",
-            "The fonts I chose.",
-            "The data I spent three weeks pulling.",
-            "The executive summary I wrote at midnight.",
-            "He got a standing ovation.",
-            "He shook hands with the CEO.",
-            "He smiled at me in the hallway and said great support work.",
-            "I had saved every version with timestamps.",
+            "A friend joined the gym and mentioned my name.",
+            "The instructor used me as an example.",
+            "She said some people just do not respond to training.",
+            "My friend came home and told me.",
+            "I had been coming three times a week for a year.",
+            "I had lost fourteen kilos.",
+            "I had hit every goal she set.",
+            "She had never told me anything except good job.",
+            "I asked to see the session records.",
         ],
-        "twist": "I sent the version history directly to the board chair with one line: I built this.",
-        "closer": "He was asked to explain himself at the next meeting. There was no next meeting after that.",
+        "twist": "The records showed she had marked half my sessions as low effort without telling me.",
+        "closer": "I asked for a full refund and left a review. The gym called me within two days.",
     },
     {
-        "label": "wrong house",
-        "hook": "A woman moved into my house while I was on vacation and changed all the locks.",
+        "label": "landlord enters flat",
+        "hook": "My landlord let himself into my apartment while I was home. He did not know I was there.",
         "beats": [
-            "I came home to a different deadbolt.",
-            "My key did not work.",
-            "I knocked.",
-            "A woman I had never seen answered.",
-            "She said this was her house.",
-            "She had a lease.",
-            "Signed by someone using my name.",
-            "With a fake ID.",
-            "She had already forwarded her mail there.",
+            "I heard the key in the lock.",
+            "I assumed it was my roommate.",
+            "I walked out of the bathroom.",
+            "It was not my roommate.",
+            "He was standing in my kitchen.",
+            "Looking through the counter.",
+            "He said he was checking something.",
+            "He had not called.",
+            "He had not knocked.",
         ],
-        "twist": "My landlord had rented my apartment to two people at the same time and disappeared with both deposits.",
-        "closer": "She and I both filed police reports together. We split the lawyer fees. We won.",
+        "twist": "When I checked the camera I had installed at the door, it was the third time that month.",
+        "closer": "I sent the footage to a tenant rights lawyer. I got three months free rent.",
     },
     {
-        "label": "fake funeral",
-        "hook": "My uncle faked his death to escape debt. He showed up at his own funeral.",
+        "label": "sister borrows money",
+        "hook": "My sister asked to borrow money for rent. I found out she spent it on a vacation.",
         "beats": [
-            "We flew in from three states.",
-            "My aunt was devastated.",
-            "The casket was closed.",
-            "The priest gave a speech.",
-            "My cousin read a poem.",
-            "My grandmother cried for the first time in twenty years.",
-            "Then someone opened the back door.",
-            "He walked in wearing sunglasses.",
-            "He said he needed everyone to know he was sorry.",
+            "She said she was two months behind.",
+            "I gave her what she asked without hesitating.",
+            "She thanked me and said she would pay it back in three weeks.",
+            "Two weeks later she posted photos from another country.",
+            "Beach.",
+            "Restaurant dinners.",
+            "A hotel room with a view.",
+            "I called her.",
+            "She said she needed a break and the rent situation had worked itself out.",
         ],
-        "twist": "The creditors had hired a private investigator who was sitting in the third row.",
-        "closer": "He was arrested before the reception. My aunt ate the cake alone.",
+        "twist": "It had worked itself out because she had asked three other family members the same week.",
+        "closer": "We no longer have a money conversation without a written agreement.",
     },
     {
-        "label": "twin secret",
-        "hook": "I met a woman at the airport who had my face. We were not related. Then we were.",
+        "label": "promotion given away",
+        "hook": "I trained my replacement for six weeks before anyone told me I did not get the promotion.",
         "beats": [
-            "She stopped walking when she saw me.",
-            "I stopped too.",
-            "Same nose.",
-            "Same left ear that folds slightly.",
-            "Same birthmark above the collarbone.",
-            "I thought I was dreaming.",
-            "She asked my birthday.",
-            "I told her.",
-            "She sat down on the floor right there.",
+            "My manager said the new hire needed onboarding.",
+            "I spent six weeks teaching her everything.",
+            "My systems.",
+            "My client relationships.",
+            "My reporting process.",
+            "On week seven she moved into the senior role.",
+            "I was told the decision had been made before the training started.",
+            "No one had thought to tell me.",
+            "I found out when I saw her new job title in a company email.",
         ],
-        "twist": "We were twins separated at birth and adopted by families who never knew the other existed.",
-        "closer": "Our biological mother had told both families the other baby did not survive.",
+        "twist": "My manager said I should see it as a leadership opportunity.",
+        "closer": "I updated my resume that afternoon. I had a new job in five weeks.",
     },
     {
-        "label": "hidden camera airbnb",
-        "hook": "My Airbnb host watched me sleep for three nights before I found the camera.",
+        "label": "wedding venue",
+        "hook": "My mother-in-law booked a different venue for our wedding without telling us.",
         "beats": [
-            "It was inside a charging dock.",
-            "Facing the bed.",
-            "I only found it because the Wi-Fi was slow and I reset the router.",
-            "The router showed a device named bedroom cam.",
-            "I checked the host profile.",
-            "Forty-seven five-star reviews.",
-            "I scrolled to the oldest ones.",
-            "One said, felt like I was being watched.",
-            "Another said, host seemed to know too much about our schedule.",
+            "We had already put down a deposit.",
+            "We had already sent save-the-dates.",
+            "She said our venue was too small.",
+            "She cancelled our booking.",
+            "She booked a venue twice the size.",
+            "She did not ask.",
+            "She told us as a surprise.",
+            "Over dinner.",
+            "In front of her side of the family.",
         ],
-        "twist": "When police searched the property they found footage going back two years.",
-        "closer": "Every five-star review was from someone who never knew.",
+        "twist": "The new venue was owned by her friend and she had already invited forty extra people from her side.",
+        "closer": "We cancelled her venue, rebooked ours, and reduced the guest list by forty.",
     },
     {
-        "label": "lottery secret",
-        "hook": "My dad won the lottery and told no one in the family for six months.",
+        "label": "doctor dismissal",
+        "hook": "My doctor told me I was fine for two years. A second opinion changed everything.",
         "beats": [
-            "He kept going to work.",
-            "He kept complaining about gas prices.",
-            "He kept asking my mom to buy the store-brand cereal.",
-            "He drove the same rusted truck.",
-            "He watched the same thirteen TV channels.",
-            "He did not buy a single new thing.",
-            "Then my parents financial advisor called my mother by mistake.",
-            "He mentioned the new account.",
-            "She asked what account.",
+            "I had been tired for two years.",
+            "Constant headaches.",
+            "Difficulty concentrating.",
+            "He said it was stress.",
+            "He said it was lifestyle.",
+            "He said some people just feel that way.",
+            "I finally saw someone else.",
+            "She ordered a blood panel in the first appointment.",
+            "The results came back the next day.",
         ],
-        "twist": "My dad had been quietly paying off every family member's debt without telling anyone how.",
-        "closer": "My mom was furious for about ten minutes. Then she saw the spreadsheet.",
+        "twist": "I had a thyroid condition that had been treatable from the beginning.",
+        "closer": "Three months of medication later, I felt like a different person.",
     },
     {
-        "label": "catfish parent",
-        "hook": "I made a fake profile to check who my daughter was talking to online. The account she liked most was my husband.",
+        "label": "fake sick day",
+        "hook": "I called in sick and ran into my manager at the mall. What happened next was not what I expected.",
         "beats": [
-            "I created a fake profile.",
-            "Same age as her, same school.",
-            "She accepted the request in four minutes.",
-            "I scrolled her following list.",
-            "One account had no photo.",
-            "Just a username.",
-            "She had replied to every single post.",
-            "I recognized the writing style immediately.",
-            "Same words he used in arguments.",
+            "I needed a day off.",
+            "I said I had a stomach issue.",
+            "I went to return a jacket.",
+            "I turned a corner.",
+            "She was standing right there.",
+            "We made eye contact.",
+            "I had nowhere to go.",
+            "She looked at me.",
+            "Then she looked at the bag I was carrying.",
         ],
-        "twist": "He was not talking to her romantically. He was spying on her the exact same way I was.",
-        "closer": "We both came clean at dinner. She has not forgiven either of us. That seems fair.",
+        "twist": "She said, good, you deserved a day. You have not taken one in eight months.",
+        "closer": "She approved two more personal days the following week without me asking.",
     },
     {
-        "label": "stolen child",
-        "hook": "My sister raised a daughter for six years before a DNA test revealed the hospital switched the babies.",
+        "label": "neighbor noise complaint",
+        "hook": "My neighbor filed a noise complaint against me. I had not been home in four days.",
         "beats": [
-            "The other family found out first.",
-            "They called the hospital.",
-            "The hospital called my sister.",
-            "She did not believe it.",
-            "She took the test three times.",
-            "Same result every time.",
-            "The other girl looked exactly like my sister.",
-            "Her daughter looked exactly like strangers.",
-            "Six years of memories that suddenly had a different shape.",
+            "I had been traveling for work.",
+            "I came back to a notice on my door.",
+            "Complaint filed Wednesday night.",
+            "I had left Sunday morning.",
+            "I told the building manager.",
+            "He said someone had definitely heard noise from my unit.",
+            "I checked my smart lock log.",
+            "It showed an entry Wednesday at 11pm.",
+            "My spare key was with one person.",
         ],
-        "twist": "The hospital had internal records of the mistake and chose not to disclose it.",
-        "closer": "Both families are in court now. Both girls know. Neither wanted to be moved.",
+        "twist": "The person with my spare key had been using my apartment while I was away.",
+        "closer": "I changed the locks and never gave out a spare key again.",
     },
     {
-        "label": "neighbor revenge",
-        "hook": "My neighbor filed code violations against me for three years. Then I found out he was an inspector.",
+        "label": "honest resignation",
+        "hook": "I told my boss exactly why I was leaving. His response ended up in a company-wide email.",
         "beats": [
-            "He reported my fence height.",
-            "He reported my driveway crack.",
-            "He filed a noise complaint about wind chimes.",
-            "Every report cost me money to fix.",
-            "I spent two weeks researching his property.",
-            "The deck he built in 2019 had no permit.",
-            "The garage conversion had no inspection.",
-            "The rental unit he had was not zoned.",
-            "I filed everything on a Tuesday morning.",
+            "He asked me to be honest.",
+            "I told him about the missed promotions.",
+            "The credit that went to others.",
+            "The salary that had not moved in three years.",
+            "He took notes.",
+            "He said he appreciated the feedback.",
+            "He said he wished I had said something sooner.",
+            "Two weeks later the CEO sent a company-wide email about culture improvements.",
+            "It listed every single issue I had raised.",
         ],
-        "twist": "He had to demolish the deck, evict his tenant, and pay back fines for four years.",
-        "closer": "He moved six months later. I replanted my garden the same weekend.",
+        "twist": "My feedback had been forwarded to leadership without my name on it and used as evidence in a review process.",
+        "closer": "Three of my former colleagues got raises that month. I got a job offer with a forty percent increase.",
     },
     {
-        "label": "witness protection",
-        "hook": "My neighbor of twelve years disappeared overnight and I found out she was never her real name.",
+        "label": "baby shower reveal",
+        "hook": "My sister announced my pregnancy at her own baby shower before I had told anyone.",
         "beats": [
-            "Her house was empty by 6am.",
-            "No moving truck.",
-            "No boxes.",
-            "Just gone.",
-            "I called the number I had for her.",
-            "Disconnected.",
-            "The landlord said a government agency handled the lease termination.",
-            "I looked up her name online.",
-            "No results. Not one.",
+            "I had told her in confidence.",
+            "I was only eight weeks.",
+            "I was not ready.",
+            "I was standing right there.",
+            "She said she had exciting news.",
+            "She pointed at me.",
+            "Twenty people turned around.",
+            "My mother started crying.",
+            "I had not even told my husband's family yet.",
         ],
-        "twist": "A detective came by a week later and asked what I knew about her previous life.",
-        "closer": "I knew her favorite coffee order and that she cried during dog food commercials. That was all.",
+        "twist": "She said she thought I was being too secretive and that good news should be shared.",
+        "closer": "I left the shower early. We did not speak for six weeks.",
     },
 ]
 
@@ -434,22 +433,22 @@ FRESH_CONFESSIONS = STRONG_CONFESSIONS.copy()
 RECENT_HOOKS: list[str] = []
 
 ESCALATION_LINES = [
-    "I did not react at first because I needed to be sure.",
-    "So I kept watching and said nothing.",
-    "The longer I stayed quiet, the more they revealed.",
-    "Everyone in the room knew something I was not supposed to find out.",
-    "That was when my stomach dropped completely.",
-    "It was not just one lie. It was a system.",
-    "Someone had planned this carefully.",
-    "I asked one simple question and nobody could answer it.",
-    "The silence told me everything the words refused to.",
-    "Then I noticed the one detail nobody expected me to catch.",
-    "I pulled out my phone and started recording everything.",
-    "The confident expression disappeared in real time.",
-    "Someone told me I was overreacting.",
-    "People only say that when they are afraid you found the truth.",
-    "I needed to hear the rest before I moved.",
-    "The next thing I saw changed the entire story.",
+    "I kept my face completely neutral.",
+    "I did not say a word. I just waited.",
+    "The more I listened, the clearer it became.",
+    "Everyone in the room felt the shift.",
+    "I asked one question and let the silence do the rest.",
+    "Something about it did not add up.",
+    "I had noticed this before but never said anything.",
+    "That was the moment I stopped being surprised.",
+    "I took a breath and decided to handle it differently.",
+    "The one detail nobody expected me to notice — I noticed.",
+    "I stayed calm because I already knew what I was going to do.",
+    "What happened next took about thirty seconds and changed everything.",
+    "I had been patient long enough.",
+    "People always underestimate the person who stays quiet.",
+    "I had documented everything. That turned out to matter.",
+    "The confident expression on their face disappeared quickly.",
 ]
 
 FRESH_TOPIC_NAME = "Fresh drama"
@@ -516,7 +515,6 @@ def choose_fresh_confession() -> dict:
 
 
 def make_tts_script(parts: list[dict]) -> str:
-    """Build TTS as flowing prose. Beats joined with commas = no robotic pauses."""
     hook = [p for p in parts if p["kind"] == "hook"]
     story = [p for p in parts if p["kind"] == "story"]
     twist = [p for p in parts if p["kind"] == "twist"]
@@ -535,7 +533,6 @@ def make_tts_script(parts: list[dict]) -> str:
 
 
 def make_hook_script(parts: list[dict]) -> str:
-    """Return only the hook sentence for duration probing."""
     hook = next((p for p in parts if p["kind"] == "hook"), parts[0])
     return clean_caption_text(hook["text"]).rstrip(".!?") + "."
 
@@ -566,17 +563,25 @@ RECENT_LABELS: list[str] = []
 
 
 def generate_story_with_groq(avoid_labels: list[str] | None = None) -> dict | None:
-    """Generate a fresh confession story using Groq API (free)."""
+    """Generate a relatable life-drama story using Groq API."""
     if not GROQ_API_KEY:
         return None
-    avoid_str2 = ", ".join(avoid_labels[-5:]) if avoid_labels else "none"
-    prompt = ("You write viral confession stories for YouTube Shorts. "
-        "HOOK: specific object/number/place, under 12 words, creates dread. "
-        "BEATS: 9 short sentences, max 7 words each, escalating, no filler. "
-        "TWIST: reframes story, starts with Turns out or That was when. "
-        f"Do NOT repeat these topics: {avoid_str2}. Use different scenario. "
-        "Return ONLY JSON: {\"label\":\"2-3 words\",\"hook\":\"under 12 words\","
-        "\"beats\":[\"9 beats\"],\"twist\":\"one sentence\",\"closer\":\"one sentence\"}")
+    avoid_str = ", ".join(avoid_labels[-5:]) if avoid_labels else "none"
+    prompt = (
+        "You write viral confession stories for YouTube Shorts. "
+        "Style: real, relatable, everyday life situations. "
+        "Topics: workplace drama, family conflict, friendship betrayal, relationship moments. "
+        "NO crime, NO violence, NO horror, NO dark themes. "
+        "HOOK rule: must name one SPECIFIC detail (a text message, a receipt, a name, a time, a number). "
+        "Hook must make the reader think 'wait, what?' in under 12 words. "
+        "BEATS: 9 sentences, max 8 words each, building tension naturally. "
+        "TWIST: one sentence that reframes everything. Start with 'Turns out' or 'That was when'. "
+        "CLOSER: one sentence — outcome or quiet revenge or lesson. "
+        f"Do NOT repeat these topics: {avoid_str}. "
+        "Return ONLY JSON: "
+        '{\"label\":\"2-3 words\",\"hook\":\"under 12 words\",'
+        '\"beats\":[\"9 beats\"],\"twist\":\"one sentence\",\"closer\":\"one sentence\"}'
+    )
     try:
         r = get_session().post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -616,10 +621,183 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
         parts.append({"kind": "story", "label": topic_label, "text": beat})
     parts.append({"kind": "twist", "label": "wait for it", "text": confession["twist"]})
     parts.append({"kind": "outro", "label": "comment", "text": confession["closer"]})
-    parts.append({"kind": "outro", "label": "comment", "text": "What would you do? Comment below and subscribe for more."})
+    parts.append({"kind": "outro", "label": "comment", "text": "Has this happened to you? Comment below and follow for more."})
     extend_story_parts(parts, topic_label)
     narration = "\n".join(part["text"] for part in parts)
     return narration, parts
+
+
+# ── PEXELS VIDEO BACKGROUND ───────────────────────────────────────────────────
+
+# Search queries mapped to story topics — warm, relatable visuals
+PEXELS_QUERIES = [
+    "office people working",
+    "couple talking kitchen",
+    "woman walking city",
+    "friends coffee shop",
+    "person phone texting",
+    "woman thinking window",
+    "couple dinner table",
+    "person typing laptop",
+    "city street walking",
+    "woman smiling work",
+    "coworkers office meeting",
+    "person looking phone surprised",
+    "morning coffee routine",
+    "family dinner table",
+    "woman reading document",
+]
+
+
+def fetch_pexels_video(tmp_dir: Path, audio_seconds: float) -> Path | None:
+    """Download a vertical (portrait) video from Pexels API."""
+    if not PEXELS_API_KEY:
+        return None
+    query = random.choice(PEXELS_QUERIES)
+    logger.info("Pexels search: %s", query)
+    try:
+        session = get_session()
+        resp = session.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": PEXELS_API_KEY},
+            params={"query": query, "per_page": 15, "orientation": "portrait", "size": "medium"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        videos = resp.json().get("videos", [])
+        if not videos:
+            # fallback: try without orientation filter
+            resp2 = session.get(
+                "https://api.pexels.com/videos/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "per_page": 15, "size": "medium"},
+                timeout=15,
+            )
+            resp2.raise_for_status()
+            videos = resp2.json().get("videos", [])
+        if not videos:
+            logger.warning("Pexels: no results for query '%s'", query)
+            return None
+
+        # Pick a video that is long enough
+        random.shuffle(videos)
+        for video in videos:
+            duration = video.get("duration", 0)
+            if duration < 10:
+                continue
+            # Pick best quality video file
+            files = sorted(
+                video.get("video_files", []),
+                key=lambda f: f.get("width", 0) * f.get("height", 0),
+                reverse=True,
+            )
+            if not files:
+                continue
+            video_url = files[0].get("link")
+            if not video_url:
+                continue
+
+            out = tmp_dir / "pexels_raw.mp4"
+            logger.info("Downloading Pexels video: %s", video_url[:80])
+            with session.get(video_url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                with open(out, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 256):
+                        f.write(chunk)
+            logger.info("Pexels video downloaded: %s", out)
+            return out
+
+        logger.warning("Pexels: no suitable video found")
+        return None
+    except Exception as e:
+        logger.warning("Pexels fetch failed: %s", e)
+        return None
+
+
+# ── GENERATIVE VIDEO FALLBACK (no downloads needed) ──────────────────────────
+
+BG_PRESETS = [
+    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*28+4':cb=128:cr=128"),
+    ("lavfi", f"color=c=black:size={W}x{H}:rate={FPS},noise=alls=40:allf=t"),
+    ("lavfi", f"mandelbrot=size={W}x{H}:rate={FPS}:inner=1"),
+    ("lavfi", f"life=size={W}x{H}:rate={FPS}:mold=10:death_color=#000814:life_color=#03071e"),
+    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*20+5':cb='random(2)*10+120':cr='random(3)*10+135'"),
+]
+
+
+def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
+    out = tmp_dir / "base.mp4"
+
+    # 1. Try Pexels
+    pexels_raw = fetch_pexels_video(tmp_dir, audio_seconds)
+    if pexels_raw and pexels_raw.exists():
+        logger.info("Using Pexels video as background")
+        src_duration = ffprobe_duration(pexels_raw)
+        speed = VIDEO_SPEED
+        src_needed = audio_seconds * speed
+        max_seek = max(0, src_duration - src_needed - 2)
+        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
+        vf = (
+            f"setpts=PTS/{speed},"
+            f"scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,"
+            f"fps={FPS},setsar=1"
+        )
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-ss", f"{seek:.2f}",
+            "-stream_loop", "-1",
+            "-i", str(pexels_raw),
+            "-t", f"{src_needed + 5:.2f}",
+            "-vf", vf,
+            "-t", f"{audio_seconds:.2f}",
+            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            str(out)
+        ], check=True, capture_output=True, timeout=300)
+        return out
+
+    # 2. Try uploaded gameplay videos
+    uploaded = sorted(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
+    if uploaded:
+        src_file = random.choice(uploaded)
+        logger.info("Using uploaded gameplay: %s", src_file.name)
+        src_duration = ffprobe_duration(src_file)
+        speed = 2.0
+        src_needed = audio_seconds * speed
+        max_seek = max(0, src_duration - src_needed - 2)
+        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
+        vf = (
+            f"setpts=PTS/{speed},"
+            f"scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,"
+            f"fps={FPS},setsar=1"
+        )
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-ss", f"{seek:.2f}",
+            "-stream_loop", "-1",
+            "-i", str(src_file),
+            "-t", f"{src_needed + 5:.2f}",
+            "-vf", vf,
+            "-t", f"{audio_seconds:.2f}",
+            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            str(out)
+        ], check=True, capture_output=True, timeout=300)
+        return out
+
+    # 3. Generative fallback
+    fmt, src = random.choice(BG_PRESETS)
+    logger.info("Using generative background")
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", fmt, "-i", src,
+        "-t", f"{audio_seconds:.2f}",
+        "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-an", str(out),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    return out
 
 
 # ── TTS ───────────────────────────────────────────────────────────────────────
@@ -713,18 +891,16 @@ def ensure_min_audio_duration(audio_path: Path, tmp_dir: Path) -> None:
     shutil.copyfile(stretched, audio_path)
 
 
-# ── СУБТИТРЫ — ЖЁЛТЫЕ ────────────────────────────────────────────────────────
+# ── SUBTITLES ─────────────────────────────────────────────────────────────────
 
 def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
-    """Transcribe audio using Groq Whisper API. Returns word-level timestamps."""
     if not GROQ_API_KEY:
         return None
     try:
         import json as _json
         with open(audio_path, "rb") as f:
             audio_data = f.read()
-        # Groq Whisper API
-        import urllib.request, urllib.parse
+        import urllib.request
         boundary = "----FormBoundary7MA4YWxkTrZu0gW"
         nl = "\r\n"
         body = (
@@ -743,7 +919,6 @@ def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
             + ("word" + nl).encode()
             + ("--" + boundary + "--" + nl).encode()
         )
-
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/audio/transcriptions",
             data=body,
@@ -754,7 +929,6 @@ def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
         )
         with urllib.request.urlopen(req, timeout=60) as r:
             result = _json.loads(r.read())
-
         words = result.get("words", [])
         if not words:
             return None
@@ -766,7 +940,6 @@ def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
 
 
 def write_ass_from_whisper(words: list[dict], audio_seconds: float, out_path: Path) -> None:
-    """Generate ASS subtitles from Whisper word timestamps."""
     YELLOW = "&H0000FFFF"
     BLACK_O = "&H00000000"
     header = (
@@ -812,7 +985,6 @@ def write_ass_from_whisper(words: list[dict], audio_seconds: float, out_path: Pa
     out_path.write_text("".join(lines), encoding="utf-8")
 
 
-
 def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
     words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
     chunks: list[str] = []
@@ -832,25 +1004,20 @@ def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
 
 
 def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
-    # Weight: words + punctuation pauses (period ~0.35s, comma ~0.15s)
     def part_weight(part: dict) -> float:
         text = clean_caption_text(part["text"])
         words = len(text.split())
-        # Each sentence has a trailing pause — hook/twist/outro get longer pause
         pause = 0.35 if part["kind"] in ("hook", "twist", "outro") else 0.15
-        # Approximate: 1 word ≈ 0.22s at normal TTS speed
         return words * 0.22 + pause
 
     weights = [max(0.5, part_weight(p)) for p in parts]
     total_weight = sum(weights)
-    # Scale weights to fit total_seconds
     scale = (total_seconds - 0.3) / total_weight if total_weight > 0 else 1.0
     cursor = 0.15
     events: list[dict] = []
     for part, weight in zip(parts, weights):
         part_duration = weight * scale
         chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
-        # Each chunk duration proportional to its word count
         chunk_words = [max(1, len(c.split())) for c in chunks]
         total_chunk_words = sum(chunk_words)
         part_start = cursor
@@ -888,12 +1055,8 @@ def ass_escape(text: str) -> str:
 
 def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path, layout: str = "split") -> None:
     events = estimate_subtitle_timings(parts, audio_seconds)
-    YELLOW  = "&H0000FFFF"
+    YELLOW = "&H0000FFFF"
     BLACK_O = "&H00000000"
-    DARK_BG = "&HAA000000"
-
-    # Alignment 5 = center screen, 2 = bottom center, 8 = top center
-    # For drama storytime: center of screen, huge bold yellow, thick black outline
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -910,7 +1073,6 @@ def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path,
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
-
     lines = [header]
     for item in events:
         text = ass_escape(item["text"])
@@ -938,81 +1100,8 @@ def ffprobe_duration(path: Path) -> float:
     return float(proc.stdout.strip())
 
 
-# ── GENERATIVE VIDEO BACKGROUND (ffmpeg lavfi, no downloads) ─────────────────
-
-# Dark cinematic backgrounds — vary each video
-BG_PRESETS = [
-    # Animated dark noise (smoke-like)
-    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*28+4':cb=128:cr=128"),
-    # Dark noise with slight color tint
-    ("lavfi", f"color=c=black:size={W}x{H}:rate={FPS},noise=alls=40:allf=t"),
-    # Mandelbrot fractal dark
-    ("lavfi", f"mandelbrot=size={W}x{H}:rate={FPS}:inner=1"),
-    # Life simulation very dark blue
-    ("lavfi", f"life=size={W}x{H}:rate={FPS}:mold=10:death_color=#000814:life_color=#03071e"),
-    # Dark animated color noise warm
-    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*20+5':cb='random(2)*10+120':cr='random(3)*10+135'"),
-]
-
-
-def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
-    out = tmp_dir / "base.mp4"
-
-    uploaded = sorted(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
-    if uploaded:
-        src_file = random.choice(uploaded)
-        logger.info("Using uploaded gameplay: %s", src_file.name)
-        src_duration = ffprobe_duration(src_file)
-        max_seek = max(0, src_duration - audio_seconds - 2)
-        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
-
-        # Smart crop: always produces correct 9:16 without distortion
-        # For vertical video (already 9:16): just scale and crop to exact size
-        # For horizontal video (16:9): crop center vertically, fill frame
-        # zoom: subtle random zoom 1.0-1.12x for dynamic feel
-        # Speed x2: need to seek more source footage
-        speed = 2.0
-        src_needed = audio_seconds * speed
-        max_seek = max(0, src_duration - src_needed - 2)
-        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
-        # Smart crop: scale-to-fill then crop center — no black bars ever
-        vf = (
-            f"setpts=PTS/{speed},"
-            f"scale=1080:1920:force_original_aspect_ratio=increase,"
-            f"crop=1080:1920,"
-            f"fps={FPS},setsar=1"
-        )
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-ss", f"{seek:.2f}",
-            "-stream_loop", "-1",
-            "-i", str(src_file),
-            "-t", f"{src_needed + 5:.2f}",
-            "-vf", vf,
-            "-t", f"{audio_seconds:.2f}",
-            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            str(out)
-        ], check=True, capture_output=True, timeout=300)
-        return out
-
-    # Fallback: generative background
-    fmt, src = random.choice(BG_PRESETS)
-    logger.info("No uploads found, using generative background: %s...", src[:50])
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", fmt, "-i", src,
-        "-t", f"{audio_seconds:.2f}",
-        "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-        "-an", str(out),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-    return out
-
-
 def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path, out_path: Path, duration: float) -> None:
     sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
-    # drawtext: "Follow for more" at bottom for first 3 seconds
     vf = (
         f"subtitles='{sub_path}',"
         "drawtext=text='Follow for more':"
@@ -1033,10 +1122,7 @@ def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path,
     )
 
 
-# ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
-
 def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float) -> Path:
-    """Resample voiceover to stereo 44100Hz."""
     out = tmp_dir / "voice_resampled.mp3"
     subprocess.run([
         "ffmpeg", "-y", "-i", str(voiceover),
@@ -1046,6 +1132,8 @@ def inject_beep_after_hook(voiceover: Path, tmp_dir: Path, hook_duration: float)
     return out
 
 
+# ── MAIN VIDEO GENERATION ─────────────────────────────────────────────────────
+
 async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     tmp_dir = Path(tempfile.mkdtemp(prefix="storybot_"))
     narration, parts = build_script(topic_name)
@@ -1053,19 +1141,16 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     subtitles = tmp_dir / "subs.ass"
     out_path = tmp_dir / f"{clean_filename(topic_name)}.mp4"
 
-    # TTS — first generate hook alone to measure its exact duration
     hook_audio = tmp_dir / "hook_probe.mp3"
     await make_voiceover(make_hook_script(parts), hook_audio)
     hook_duration = ffprobe_duration(hook_audio)
     logger.info("Hook duration: %.2fs", hook_duration)
-    # Generate full voiceover
+
     await make_voiceover(make_tts_script(parts), voiceover)
-    # Inject beep exactly after hook
     voiceover = await asyncio.to_thread(inject_beep_after_hook, voiceover, tmp_dir, hook_duration)
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
 
-    # Subtitles — use Whisper for accurate word-level timing if available
     if USE_WHISPER and GROQ_API_KEY:
         whisper_words = await asyncio.to_thread(transcribe_with_whisper, voiceover)
         if whisper_words:
@@ -1075,12 +1160,9 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     else:
         write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
 
-    # Generate cinematic background (no downloads needed)
     base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds)
-
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
 
-    # Compress if too large for Telegram
     size_mb = out_path.stat().st_size / (1024 * 1024)
     if size_mb > 45:
         compressed = tmp_dir / "compressed.mp4"
@@ -1104,10 +1186,10 @@ def make_youtube_metadata(topic_name: str, narration: str) -> tuple[str, str, li
     title = hook[:88].rstrip(" .,!?:;")
     if "#shorts" not in title.lower():
         title = f"{title} #shorts"
-    hashtags = "#shorts #storytime #drama #confession #redditstories #fyp #viral #truestory #familydrama #cheating"
-    description = f"{hook}\n\nAnonymous story with a twist. Would you believe this happened?\n\n{hashtags}"
+    hashtags = "#shorts #storytime #drama #confession #redditstories #fyp #viral #truestory #workplacedrama #relatable"
+    description = f"{hook}\n\nAnonymous confession. Real situations, real outcomes.\n\n{hashtags}"
     tags = ["shorts", "storytime", "reddit stories", "drama", "confession",
-            "family drama", "cheating story", "true story", "fyp", "viral"]
+            "workplace drama", "relatable", "true story", "fyp", "viral"]
     return title, description, tags
 
 
@@ -1301,35 +1383,30 @@ async def publish_now(message: Message) -> None:
 
 @dp.message(F.video | F.document)
 async def handle_video_upload(message: Message) -> None:
-    """Owner uploads a gameplay video — save to /data/gameplay/ for use as background."""
     user_id = message.from_user.id
     if AUTOPILOT_USER_ID and user_id != AUTOPILOT_USER_ID:
         await message.answer("⛔ Только владелец может загружать видео.")
         return
-
     file = message.video or message.document
     if not file:
         return
-
-    # Check it's a video
     mime = getattr(file, "mime_type", "") or ""
     if message.document and not mime.startswith("video/"):
         await message.answer("Отправь видео файлом (mp4).")
         return
-
-    # Count existing files
     existing = list(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
     name = f"gameplay_{len(existing) + 1:02d}.mp4"
     save_path = GAMEPLAY_CACHE_DIR / name
-
     await message.answer(f"⏳ Сохраняю как {name}...")
     try:
         tg_file = await bot.get_file(file.file_id)
         await bot.download_file(tg_file.file_path, save_path)
         size_mb = save_path.stat().st_size / 1024 / 1024
         total = len(list(GAMEPLAY_CACHE_DIR.glob("*.mp4")))
-        msg = f"✅ <b>Сохранено!</b> {name} ({size_mb:.1f} MB)" + "\n" + f"📁 Всего видео в библиотеке: {total}"
-        await message.answer(msg, parse_mode="HTML")
+        await message.answer(
+            f"✅ <b>Сохранено!</b> {name} ({size_mb:.1f} MB)\n📁 Всего видео: {total}",
+            parse_mode="HTML"
+        )
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
 
@@ -1340,7 +1417,7 @@ async def handle_library(message: Message) -> None:
     if not files:
         await message.answer("📁 Библиотека пуста. Отправь видео файлом — сохраню как фон.")
         return
-    lines = ["📁 <b>Видео в библиотеке (" + str(len(files)) + " шт):</b>\n"]
+    lines = [f"📁 <b>Видео в библиотеке ({len(files)} шт):</b>\n"]
     for f in sorted(files):
         mb = f.stat().st_size / 1024 / 1024
         lines.append(f"• {f.name} — {mb:.1f} MB")
@@ -1349,7 +1426,10 @@ async def handle_library(message: Message) -> None:
 
 @dp.message()
 async def fallback(message: Message) -> None:
-    await message.answer("Нажми кнопку 👇\n\nОтправь mp4 файлом — сохраню как фон для видео.", reply_markup=keyboard_main())
+    await message.answer(
+        "Нажми кнопку 👇\n\nОтправь mp4 файлом — сохраню как фон для видео.",
+        reply_markup=keyboard_main()
+    )
 
 
 async def main() -> None:
