@@ -769,7 +769,7 @@ def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: 
             text = clean_caption_text(part["text"])
             wrapped = _wrap_words(text, max_chars=30)
             story_lines_all.extend(wrapped)
-            story_lines_all.append("")  # blank line between parts
+            # no blank lines — compact display
 
     # Remove trailing blank lines
     while story_lines_all and story_lines_all[-1] == "":
@@ -777,11 +777,10 @@ def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: 
 
     total_frames = int(audio_seconds * FPS)
 
-    # How many chars to reveal per frame (typewriter speed)
+    # Typewriter speed — start immediately, reveal by 90% of duration
     full_text = "\n".join(story_lines_all)
     total_chars = len(full_text)
-    # Reveal all text by 80% of video duration, then hold
-    reveal_frames = int(total_frames * 0.80)
+    reveal_frames = int(total_frames * 0.90)
     chars_per_frame = total_chars / max(reveal_frames, 1)
 
     def draw_rounded_rect(draw: ImageDraw.Draw, xy, radius: int, fill):
@@ -883,19 +882,7 @@ def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: 
                     cursor_x = text_x + len(last_line) * (FONT_SIZE // 2)
             draw.text((cursor_x, cursor_y), CURSOR_CHAR, font=font, fill=cursor_color)
 
-        # Subtle vignette effect (darken edges of canvas)
-        vignette = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
-        vd = ImageDraw.Draw(vignette)
-        for r in range(300, 0, -10):
-            alpha = int((300 - r) * 0.35)
-            vd.ellipse(
-                [CW // 2 - r * 2, CH // 2 - r * 3,
-                 CW // 2 + r * 2, CH // 2 + r * 3],
-                outline=(0, 0, 0, alpha), width=10
-            )
-        img = img.convert("RGBA")
-        img = Image.alpha_composite(img, vignette)
-        img = img.convert("RGB")
+        # Clean dark background — no vignette needed
 
         return img
 
@@ -1283,19 +1270,10 @@ def ffprobe_duration(path: Path) -> float:
 
 
 def burn_subtitles_and_audio(base_video: Path, voiceover: Path, subtitles: Path, out_path: Path, duration: float) -> None:
-    sub_path = subtitles.as_posix().replace(":", r"\:").replace("'", r"\'")
-    vf = (
-        f"subtitles='{sub_path}',"
-        "drawtext=text='Follow for more':"
-        "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        "fontsize=52:fontcolor=white:borderw=4:bordercolor=black:"
-        "x=(w-text_w)/2:y=h-160:enable='lt(t,3)',"
-        "scale=1080:1920"
-    )
+    # Subtitles removed — typewriter animation displays the text visually
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(base_video), "-i", str(voiceover),
          "-t", f"{duration:.2f}",
-         "-vf", vf,
          "-map", "0:v", "-map", "1:a",
          "-c:v", "libx264", "-preset", "fast", "-crf", "20",
          "-maxrate", "8M", "-bufsize", "16M",
@@ -1333,14 +1311,7 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     await asyncio.to_thread(ensure_min_audio_duration, voiceover, tmp_dir)
     audio_seconds = min(VIDEO_SECONDS, ffprobe_duration(voiceover))
 
-    if USE_WHISPER and GROQ_API_KEY:
-        whisper_words = await asyncio.to_thread(transcribe_with_whisper, voiceover)
-        if whisper_words:
-            await asyncio.to_thread(write_ass_from_whisper, whisper_words, audio_seconds, subtitles)
-        else:
-            write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
-    else:
-        write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
+    # Subtitles disabled — typewriter animation handles text display
 
     base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds, parts)
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
