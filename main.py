@@ -70,7 +70,7 @@ GAMEPLAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 W, H = 1080, 1920
 FPS = 30
 
-AUTOPILOT_SCHEDULE_UTC = [13, 19, 0]
+AUTOPILOT_SCHEDULE_UTC = [15]  # 1 video/day at 18:00 Kyiv (UTC+3)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing")
@@ -1296,11 +1296,11 @@ async def autopilot_loop() -> None:
         logger.info("Autopilot: next UTC %02d:xx in %dh %dm", target_hour, h, m // 60)
 
         if AUTOPILOT_USER_ID:
-            et_hour = (target_hour - 4) % 24
+            kyiv_hour = (target_hour + 3) % 24
             await bot.send_message(
                 AUTOPILOT_USER_ID,
                 f"🕐 Автопилот: публикация через {h}ч {m//60}мин\n"
-                f"UTC {target_hour:02d}:xx = ET {et_hour:02d}:xx"
+                f"UTC {target_hour:02d}:xx = Киев {kyiv_hour:02d}:xx"
             )
 
         await asyncio.sleep(wait_seconds)
@@ -1377,8 +1377,8 @@ async def cmd_start(message: Message) -> None:
     await message.answer(
         "👋 <b>Story Bot</b>\n\n"
         "Нажми <b>Генерировать видео</b> — получи готовый Short.\n\n"
-        "🤖 Автопилот: 3 публикации в день\n"
-        "9:00 • 15:00 • 20:00 US Eastern Time",
+        "🤖 Автопилот: 1 публикация в день\n"
+        "18:00 по Киеву (UTC+3)",
         parse_mode="HTML", reply_markup=keyboard_main(),
     )
 
