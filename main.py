@@ -627,136 +627,285 @@ def build_script(topic_name: str) -> tuple[str, list[dict]]:
     return narration, parts
 
 
-# ── PEXELS VIDEO BACKGROUND ───────────────────────────────────────────────────
+# ── TYPEWRITER PHONE ANIMATION BACKGROUND ────────────────────────────────────
+#
+# Renders a realistic phone Notes/iMessage UI with typewriter effect.
+# Pure Python + ffmpeg — no external APIs, no downloads.
+# Each video gets a random color scheme and slight variations for uniqueness.
 
-# Search queries mapped to story topics — warm, relatable visuals
-PEXELS_QUERIES = [
-    "office people working",
-    "couple talking kitchen",
-    "woman walking city",
-    "friends coffee shop",
-    "person phone texting",
-    "woman thinking window",
-    "couple dinner table",
-    "person typing laptop",
-    "city street walking",
-    "woman smiling work",
-    "coworkers office meeting",
-    "person looking phone surprised",
-    "morning coffee routine",
-    "family dinner table",
-    "woman reading document",
+# Phone UI themes — dark and light variants
+PHONE_THEMES = [
+    # (bg_color, phone_bg, header_color, text_color, cursor_color, app_name)
+    ("#0d0d0d", "#1c1c1e", "#2c2c2e", "#ffffff", "#ffffff", "Notes"),
+    ("#0d0d0d", "#1c1c1e", "#2c2c2e", "#fffde7", "#ffe082", "Notes"),
+    ("#0a0a0f", "#1a1a2e", "#16213e", "#e0e0ff", "#7c83fd", "Notes"),
+    ("#0d0d0d", "#1e1e1e", "#252525", "#f5f5f5", "#4caf50", "Notes"),
+    ("#050505", "#111111", "#1a1a1a", "#ffffff", "#ff6b6b", "Notes"),
 ]
 
+# Blinking cursor chars
+CURSOR_CHAR = "▋"
 
-def fetch_pexels_video(tmp_dir: Path, audio_seconds: float) -> Path | None:
-    """Download a vertical (portrait) video from Pexels API."""
-    if not PEXELS_API_KEY:
-        return None
-    query = random.choice(PEXELS_QUERIES)
-    logger.info("Pexels search: %s", query)
+
+def _wrap_words(text: str, max_chars: int = 32) -> list[str]:
+    """Word-wrap text to fit phone screen width."""
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        if len(current) + len(word) + (1 if current else 0) <= max_chars:
+            current = current + (" " if current else "") + word
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: float) -> Path:
+    """
+    Generate a phone Notes typewriter animation synced to the story parts.
+    Uses Pillow to render frames, then encodes with ffmpeg.
+    """
     try:
-        session = get_session()
-        resp = session.get(
-            "https://api.pexels.com/videos/search",
-            headers={"Authorization": PEXELS_API_KEY},
-            params={"query": query, "per_page": 15, "orientation": "portrait", "size": "medium"},
-            timeout=15,
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        subprocess.run(
+            ["pip", "install", "Pillow", "--break-system-packages", "-q"],
+            check=True, capture_output=True
         )
-        resp.raise_for_status()
-        videos = resp.json().get("videos", [])
-        if not videos:
-            # fallback: try without orientation filter
-            resp2 = session.get(
-                "https://api.pexels.com/videos/search",
-                headers={"Authorization": PEXELS_API_KEY},
-                params={"query": query, "per_page": 15, "size": "medium"},
-                timeout=15,
+        from PIL import Image, ImageDraw, ImageFont
+
+    theme = random.choice(PHONE_THEMES)
+    bg_hex, phone_bg_hex, header_hex, text_hex, cursor_hex, app_name = theme
+
+    def hex_to_rgb(h: str) -> tuple:
+        h = h.lstrip("#")
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+    bg_color      = hex_to_rgb(bg_hex)
+    phone_bg      = hex_to_rgb(phone_bg_hex)
+    header_color  = hex_to_rgb(header_hex)
+    text_color    = hex_to_rgb(text_hex)
+    cursor_color  = hex_to_rgb(cursor_hex)
+
+    # Canvas: 1080x1920 (9:16)
+    CW, CH = W, H
+
+    # Phone frame dimensions — centered card
+    PW = 880   # phone width
+    PH = 1600  # phone height
+    PX = (CW - PW) // 2  # left offset
+    PY = (CH - PH) // 2  # top offset
+    CORNER = 54
+    HEADER_H = 120
+    PADDING = 48
+    LINE_H = 58
+    FONT_SIZE = 38
+    HEADER_FONT_SIZE = 44
+    TIME_FONT_SIZE = 28
+
+    # Try to find a decent font
+    font_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    font_bold_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+    ]
+
+    font_path = next((f for f in font_candidates if Path(f).exists()), None)
+    font_bold_path = next((f for f in font_bold_candidates if Path(f).exists()), None)
+
+    try:
+        font      = ImageFont.truetype(font_path, FONT_SIZE) if font_path else ImageFont.load_default()
+        font_bold = ImageFont.truetype(font_bold_path or font_path, HEADER_FONT_SIZE) if (font_bold_path or font_path) else ImageFont.load_default()
+        font_time = ImageFont.truetype(font_path, TIME_FONT_SIZE) if font_path else ImageFont.load_default()
+    except Exception:
+        font = font_bold = font_time = ImageFont.load_default()
+
+    # Build the full story text to reveal progressively
+    story_lines_all: list[str] = []
+    for part in parts:
+        if part["kind"] in ("hook", "story", "twist", "outro"):
+            text = clean_caption_text(part["text"])
+            wrapped = _wrap_words(text, max_chars=30)
+            story_lines_all.extend(wrapped)
+            story_lines_all.append("")  # blank line between parts
+
+    # Remove trailing blank lines
+    while story_lines_all and story_lines_all[-1] == "":
+        story_lines_all.pop()
+
+    total_frames = int(audio_seconds * FPS)
+
+    # How many chars to reveal per frame (typewriter speed)
+    full_text = "\n".join(story_lines_all)
+    total_chars = len(full_text)
+    # Reveal all text by 80% of video duration, then hold
+    reveal_frames = int(total_frames * 0.80)
+    chars_per_frame = total_chars / max(reveal_frames, 1)
+
+    def draw_rounded_rect(draw: ImageDraw.Draw, xy, radius: int, fill):
+        x1, y1, x2, y2 = xy
+        draw.rectangle([x1 + radius, y1, x2 - radius, y2], fill=fill)
+        draw.rectangle([x1, y1 + radius, x2, y2 - radius], fill=fill)
+        draw.ellipse([x1, y1, x1 + 2*radius, y1 + 2*radius], fill=fill)
+        draw.ellipse([x2 - 2*radius, y1, x2, y1 + 2*radius], fill=fill)
+        draw.ellipse([x1, y2 - 2*radius, x1 + 2*radius, y2], fill=fill)
+        draw.ellipse([x2 - 2*radius, y2, x2, y2], fill=fill)
+
+    def render_frame(chars_revealed: int, frame_idx: int) -> Image.Image:
+        img = Image.new("RGB", (CW, CH), bg_color)
+        draw = ImageDraw.Draw(img)
+
+        # Outer glow / shadow effect
+        for offset in range(8, 0, -2):
+            shadow_color = tuple(min(255, c + 15) for c in bg_color)
+            draw_rounded_rect(
+                draw,
+                (PX - offset, PY - offset, PX + PW + offset, PY + PH + offset),
+                CORNER + offset,
+                shadow_color
             )
-            resp2.raise_for_status()
-            videos = resp2.json().get("videos", [])
-        if not videos:
-            logger.warning("Pexels: no results for query '%s'", query)
-            return None
 
-        # Pick a video that is long enough
-        random.shuffle(videos)
-        for video in videos:
-            duration = video.get("duration", 0)
-            if duration < 10:
-                continue
-            # Pick best quality video file
-            files = sorted(
-                video.get("video_files", []),
-                key=lambda f: f.get("width", 0) * f.get("height", 0),
-                reverse=True,
+        # Phone body
+        draw_rounded_rect(draw, (PX, PY, PX + PW, PY + PH), CORNER, phone_bg)
+
+        # Header bar
+        draw_rounded_rect(draw, (PX, PY, PX + PW, PY + HEADER_H), CORNER, header_color)
+        # Straight bottom of header
+        draw.rectangle([PX, PY + CORNER, PX + PW, PY + HEADER_H], fill=header_color)
+
+        # App name in header
+        draw.text(
+            (PX + PW // 2, PY + HEADER_H // 2),
+            app_name,
+            font=font_bold,
+            fill=text_color,
+            anchor="mm"
+        )
+
+        # Status bar time (top left)
+        draw.text(
+            (PX + 28, PY + 22),
+            "9:41",
+            font=font_time,
+            fill=text_color,
+        )
+
+        # Status icons (top right) — simple dots
+        for i, dot_color in enumerate([text_color, text_color, text_color]):
+            draw.ellipse(
+                [PX + PW - 90 + i * 22, PY + 26, PX + PW - 78 + i * 22, PY + 38],
+                fill=dot_color
             )
-            if not files:
-                continue
-            video_url = files[0].get("link")
-            if not video_url:
-                continue
 
-            out = tmp_dir / "pexels_raw.mp4"
-            logger.info("Downloading Pexels video: %s", video_url[:80])
-            with session.get(video_url, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                with open(out, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=1024 * 256):
-                        f.write(chunk)
-            logger.info("Pexels video downloaded: %s", out)
-            return out
+        # Divider line under header
+        draw.line(
+            [(PX, PY + HEADER_H), (PX + PW, PY + HEADER_H)],
+            fill=tuple(max(0, c - 20) for c in header_color),
+            width=2
+        )
 
-        logger.warning("Pexels: no suitable video found")
-        return None
-    except Exception as e:
-        logger.warning("Pexels fetch failed: %s", e)
-        return None
+        # Text area
+        text_x = PX + PADDING
+        text_y = PY + HEADER_H + PADDING
+
+        # Reconstruct visible text from char count
+        visible_text = full_text[:chars_revealed]
+        visible_lines = visible_text.split("\n")
+
+        # Max visible lines that fit in phone
+        max_lines_visible = (PH - HEADER_H - PADDING * 2) // LINE_H
+
+        # Scroll: show last N lines as text grows
+        if len(visible_lines) > max_lines_visible:
+            visible_lines = visible_lines[-max_lines_visible:]
+
+        for i, line in enumerate(visible_lines):
+            y = text_y + i * LINE_H
+            if y + LINE_H > PY + PH - PADDING:
+                break
+            if line:
+                draw.text((text_x, y), line, font=font, fill=text_color)
+
+        # Blinking cursor (blink every 0.5s)
+        cursor_visible = (frame_idx // (FPS // 2)) % 2 == 0
+        if cursor_visible and chars_revealed <= total_chars:
+            # Position cursor after last char on last line
+            last_line = visible_lines[-1] if visible_lines else ""
+            cursor_x = text_x
+            cursor_y = text_y + (len(visible_lines) - 1) * LINE_H
+            if last_line:
+                try:
+                    bbox = draw.textbbox((cursor_x, cursor_y), last_line, font=font)
+                    cursor_x = bbox[2] + 4
+                except Exception:
+                    cursor_x = text_x + len(last_line) * (FONT_SIZE // 2)
+            draw.text((cursor_x, cursor_y), CURSOR_CHAR, font=font, fill=cursor_color)
+
+        # Subtle vignette effect (darken edges of canvas)
+        vignette = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+        vd = ImageDraw.Draw(vignette)
+        for r in range(300, 0, -10):
+            alpha = int((300 - r) * 0.35)
+            vd.ellipse(
+                [CW // 2 - r * 2, CH // 2 - r * 3,
+                 CW // 2 + r * 2, CH // 2 + r * 3],
+                outline=(0, 0, 0, alpha), width=10
+            )
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, vignette)
+        img = img.convert("RGB")
+
+        return img
+
+    # Write frames to temp directory
+    frames_dir = tmp_dir / "frames"
+    frames_dir.mkdir()
+
+    logger.info("Rendering %d typewriter frames...", total_frames)
+    for frame_idx in range(total_frames):
+        chars_revealed = min(total_chars, int(frame_idx * chars_per_frame))
+        img = render_frame(chars_revealed, frame_idx)
+        img.save(frames_dir / f"frame_{frame_idx:05d}.png", optimize=False)
+
+    # Encode frames to video
+    out = tmp_dir / "base.mp4"
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-framerate", str(FPS),
+        "-i", str(frames_dir / "frame_%05d.png"),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-t", f"{audio_seconds:.2f}",
+        str(out)
+    ], check=True, capture_output=True, timeout=300)
+
+    logger.info("Typewriter background rendered: %s", out)
+    return out
 
 
-# ── GENERATIVE VIDEO FALLBACK (no downloads needed) ──────────────────────────
-
-BG_PRESETS = [
-    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*28+4':cb=128:cr=128"),
-    ("lavfi", f"color=c=black:size={W}x{H}:rate={FPS},noise=alls=40:allf=t"),
-    ("lavfi", f"mandelbrot=size={W}x{H}:rate={FPS}:inner=1"),
-    ("lavfi", f"life=size={W}x{H}:rate={FPS}:mold=10:death_color=#000814:life_color=#03071e"),
-    ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*20+5':cb='random(2)*10+120':cr='random(3)*10+135'"),
-]
-
-
-def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
+def make_generative_background(tmp_dir: Path, audio_seconds: float, parts: list[dict] | None = None) -> Path:
+    """Main background dispatcher — typewriter first, then fallbacks."""
     out = tmp_dir / "base.mp4"
 
-    # 1. Try Pexels
-    pexels_raw = fetch_pexels_video(tmp_dir, audio_seconds)
-    if pexels_raw and pexels_raw.exists():
-        logger.info("Using Pexels video as background")
-        src_duration = ffprobe_duration(pexels_raw)
-        speed = VIDEO_SPEED
-        src_needed = audio_seconds * speed
-        max_seek = max(0, src_duration - src_needed - 2)
-        seek = random.uniform(0, max_seek) if max_seek > 0 else 0
-        vf = (
-            f"setpts=PTS/{speed},"
-            f"scale=1080:1920:force_original_aspect_ratio=increase,"
-            f"crop=1080:1920,"
-            f"fps={FPS},setsar=1"
-        )
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-ss", f"{seek:.2f}",
-            "-stream_loop", "-1",
-            "-i", str(pexels_raw),
-            "-t", f"{src_needed + 5:.2f}",
-            "-vf", vf,
-            "-t", f"{audio_seconds:.2f}",
-            "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            str(out)
-        ], check=True, capture_output=True, timeout=300)
-        return out
+    # 1. Typewriter animation (primary)
+    if parts:
+        try:
+            return make_typewriter_background(tmp_dir, parts, audio_seconds)
+        except Exception as e:
+            logger.warning("Typewriter background failed: %s — falling back", e)
 
-    # 2. Try uploaded gameplay videos
+    # 2. Uploaded gameplay videos
     uploaded = sorted(GAMEPLAY_CACHE_DIR.glob("*.mp4"))
     if uploaded:
         src_file = random.choice(uploaded)
@@ -785,18 +934,20 @@ def make_generative_background(tmp_dir: Path, audio_seconds: float) -> Path:
         ], check=True, capture_output=True, timeout=300)
         return out
 
-    # 3. Generative fallback
+    # 3. Pure generative (last resort)
+    BG_PRESETS = [
+        ("lavfi", f"nullsrc=size={W}x{H}:rate={FPS},geq=lum='random(1)*28+4':cb=128:cr=128"),
+        ("lavfi", f"color=c=black:size={W}x{H}:rate={FPS},noise=alls=40:allf=t"),
+    ]
     fmt, src = random.choice(BG_PRESETS)
     logger.info("Using generative background")
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", fmt, "-i", src,
+    subprocess.run([
+        "ffmpeg", "-y", "-f", fmt, "-i", src,
         "-t", f"{audio_seconds:.2f}",
         "-vf", f"scale={W}:{H},setsar=1,fps={FPS}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-an", str(out),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    ], check=True, capture_output=True, timeout=120)
     return out
 
 
@@ -1160,7 +1311,7 @@ async def generate_story_video(topic_name: str) -> tuple[Path, str]:
     else:
         write_ass_subtitles(parts, audio_seconds, subtitles, layout=LAYOUT_MODE)
 
-    base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds)
+    base_video = await asyncio.to_thread(make_generative_background, tmp_dir, audio_seconds, parts)
     await asyncio.to_thread(burn_subtitles_and_audio, base_video, voiceover, subtitles, out_path, audio_seconds)
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
