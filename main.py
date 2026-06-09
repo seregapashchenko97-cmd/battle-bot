@@ -777,11 +777,51 @@ def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: 
 
     total_frames = int(audio_seconds * FPS)
 
-    # Typewriter speed — start immediately, reveal by 90% of duration
+    # Sync typewriter to voice speed:
+    # Count total words in TTS script, map each word to its visual position.
+    # Voice speaks at roughly constant words/sec — we match that rate char by char.
     full_text = "\n".join(story_lines_all)
     total_chars = len(full_text)
-    reveal_frames = int(total_frames * 0.90)
-    chars_per_frame = total_chars / max(reveal_frames, 1)
+
+    # Build a char→frame map based on word timing
+    # Each word takes (audio_seconds / total_words) seconds to speak
+    tts_words = [w for w in full_text.replace("\n", " ").split() if w]
+    total_words = max(len(tts_words), 1)
+    secs_per_word = audio_seconds / total_words
+
+    # Map char index → frame index
+    # We walk through full_text word by word and assign reveal frame per char
+    char_reveal_frame = [0] * (total_chars + 1)
+    char_idx = 0
+    word_idx = 0
+    pos = 0
+    while pos < total_chars:
+        # Skip whitespace — reveal instantly with previous word
+        if full_text[pos] in (' ', '\n'):
+            char_reveal_frame[pos] = char_reveal_frame[pos - 1] if pos > 0 else 0
+            pos += 1
+            continue
+        # Find end of this word
+        word_end = pos
+        while word_end < total_chars and full_text[word_end] not in (' ', '\n'):
+            word_end += 1
+        # This word starts at word_idx * secs_per_word
+        word_start_frame = int(word_idx * secs_per_word * FPS)
+        word_end_frame = int((word_idx + 1) * secs_per_word * FPS)
+        word_len = word_end - pos
+        for i, c in enumerate(range(pos, word_end)):
+            # Spread chars of this word evenly within its time slot
+            reveal_f = word_start_frame + int(i * (word_end_frame - word_start_frame) / max(word_len, 1))
+            char_reveal_frame[c] = min(reveal_f, total_frames - 1)
+        pos = word_end
+        word_idx += 1
+
+    def chars_at_frame(frame_idx: int) -> int:
+        """Return how many chars should be visible at this frame."""
+        for i in range(total_chars, 0, -1):
+            if char_reveal_frame[i - 1] <= frame_idx:
+                return i
+        return 0
 
     def draw_rounded_rect(draw: ImageDraw.Draw, xy, radius: int, fill):
         x1, y1, x2, y2 = xy
@@ -892,7 +932,7 @@ def make_typewriter_background(tmp_dir: Path, parts: list[dict], audio_seconds: 
 
     logger.info("Rendering %d typewriter frames...", total_frames)
     for frame_idx in range(total_frames):
-        chars_revealed = min(total_chars, int(frame_idx * chars_per_frame))
+        chars_revealed = chars_at_frame(frame_idx)
         img = render_frame(chars_revealed, frame_idx)
         img.save(frames_dir / f"frame_{frame_idx:05d}.png", optimize=False)
 
@@ -1108,158 +1148,7 @@ def transcribe_with_whisper(audio_path: Path) -> list[dict] | None:
         return None
 
 
-def write_ass_from_whisper(words: list[dict], audio_seconds: float, out_path: Path) -> None:
-    YELLOW = "&H0000FFFF"
-    BLACK_O = "&H00000000"
-    header = (
-        "[Script Info]\n"
-        "ScriptType: v4.00+\n"
-        f"PlayResX: {W}\n"
-        f"PlayResY: {H}\n\n"
-        "[V4+ Styles]\n"
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
-        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,Arial,130,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,12,0,5,60,60,0,1\n\n"
-        "[Events]\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-    )
-    lines = [header]
-    chunk = []
-    chunk_start = None
-
-    def flush_chunk(end_time):
-        if not chunk:
-            return
-        text = ass_escape(" ".join(w["word"].strip() for w in chunk))
-        lines.append(
-            f"Dialogue: 0,{ass_time(chunk_start)},{ass_time(min(end_time, audio_seconds - 0.05))},Default,,0,0,0,,{text}\n"
-        )
-
-    for word in words:
-        w_start = float(word.get("start", 0))
-        w_end = float(word.get("end", w_start + 0.3))
-        if chunk_start is None:
-            chunk_start = w_start
-        chunk.append(word)
-        if len(chunk) >= SUBTITLE_WORDS:
-            flush_chunk(w_end)
-            chunk = []
-            chunk_start = None
-
-    if chunk:
-        last_end = float(words[-1].get("end", audio_seconds))
-        flush_chunk(last_end)
-
-    out_path.write_text("".join(lines), encoding="utf-8")
-
-
-def chunk_subtitle_text(text: str, max_words: int = 3) -> list[str]:
-    words = re.findall(r"[A-Za-z0-9']+|[!?.,]", clean_caption_text(text))
-    chunks: list[str] = []
-    current: list[str] = []
-    for token in words:
-        if re.fullmatch(r"[!?.,]", token):
-            if current:
-                current[-1] += token
-            continue
-        current.append(token)
-        if len(current) >= max(2, min(3, max_words)):
-            chunks.append(" ".join(current))
-            current = []
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
-
-
-def estimate_subtitle_timings(parts: list[dict], total_seconds: float) -> list[dict]:
-    def part_weight(part: dict) -> float:
-        text = clean_caption_text(part["text"])
-        words = len(text.split())
-        pause = 0.35 if part["kind"] in ("hook", "twist", "outro") else 0.15
-        return words * 0.22 + pause
-
-    weights = [max(0.5, part_weight(p)) for p in parts]
-    total_weight = sum(weights)
-    scale = (total_seconds - 0.3) / total_weight if total_weight > 0 else 1.0
-    cursor = 0.15
-    events: list[dict] = []
-    for part, weight in zip(parts, weights):
-        part_duration = weight * scale
-        chunks = chunk_subtitle_text(part["text"], SUBTITLE_WORDS)
-        chunk_words = [max(1, len(c.split())) for c in chunks]
-        total_chunk_words = sum(chunk_words)
-        part_start = cursor
-        part_end = min(total_seconds - 0.1, cursor + part_duration)
-        events.append({
-            "start": part_start,
-            "end": min(part_end, part_start + 2.5),
-            "text": part["label"].upper(),
-            "kind": "label",
-        })
-        for chunk, cw in zip(chunks, chunk_words):
-            start = cursor
-            duration = max(0.35, part_duration * cw / total_chunk_words)
-            end = min(total_seconds - 0.1, cursor + duration)
-            events.append({"start": start, "end": end, "text": chunk, "kind": part["kind"]})
-            cursor = end
-    return events
-
-
-def ass_time(seconds: float) -> str:
-    seconds = max(0, seconds)
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    cs = int((seconds - int(seconds)) * 100)
-    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
-
-
-def ass_escape(text: str) -> str:
-    text = clean_caption_text(text)
-    text = text.replace("\\", "")
-    text = text.replace("{", "(").replace("}", ")")
-    return text
-
-
-def write_ass_subtitles(parts: list[dict], audio_seconds: float, out_path: Path, layout: str = "split") -> None:
-    events = estimate_subtitle_timings(parts, audio_seconds)
-    YELLOW = "&H0000FFFF"
-    BLACK_O = "&H00000000"
-    header = (
-        "[Script Info]\n"
-        "ScriptType: v4.00+\n"
-        f"PlayResX: {W}\n"
-        f"PlayResY: {H}\n\n"
-        "[V4+ Styles]\n"
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
-        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,Arial,130,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,12,0,5,60,60,0,1\n"
-        f"Style: Hook,Arial,148,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,14,0,5,56,56,0,1\n"
-        f"Style: Twist,Arial,148,{YELLOW},&H000000FF,{BLACK_O},&H00000000,1,0,0,0,100,100,2,0,1,14,0,5,56,56,0,1\n"
-        f"Style: Label,Arial,56,{YELLOW},&H000000FF,{BLACK_O},&HCC000000,1,0,0,0,100,100,0,0,3,14,0,8,80,80,120,1\n\n"
-        "[Events]\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-    )
-    lines = [header]
-    for item in events:
-        text = ass_escape(item["text"])
-        if item["kind"] == "label":
-            style = "Label"
-        elif item["kind"] == "hook":
-            style = "Hook"
-        elif item["kind"] == "twist":
-            style = "Twist"
-        else:
-            style = "Default"
-        lines.append(
-            f"Dialogue: 0,{ass_time(item['start'])},{ass_time(item['end'])},"
-            f"{style},,0,0,0,,{text}\n"
-        )
-    out_path.write_text("".join(lines), encoding="utf-8")
-
-
+# Subtitle functions removed — typewriter handles display
 def ffprobe_duration(path: Path) -> float:
     proc = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
